@@ -71,13 +71,17 @@ G.post = (function () {
         depthWrite: false, depthTest: false,
       });
       matCombine = new THREE.ShaderMaterial({
-        uniforms: { tex: { value: null }, bloom: { value: null }, uStrength: { value: 0.85 } },
+        uniforms: { tex: { value: null }, bloom: { value: null }, uStrength: { value: 0.85 }, uUnder: { value: 0 } },
         vertexShader: VERT,
         fragmentShader: `
-          varying vec2 vUv; uniform sampler2D tex; uniform sampler2D bloom; uniform float uStrength;
+          varying vec2 vUv; uniform sampler2D tex; uniform sampler2D bloom; uniform float uStrength; uniform float uUnder;
           void main() {
             vec3 c = texture2D(tex, vUv).rgb + texture2D(bloom, vUv).rgb * uStrength;
-            gl_FragColor = vec4(c, 1.0);
+            // dreamy underwater grade: cool tint + soft edge vignette
+            vec3 uw = c * vec3(0.68, 0.9, 1.06) + vec3(0.0, 0.02, 0.05);
+            float d = distance(vUv, vec2(0.5));
+            uw *= 1.0 - smoothstep(0.42, 0.85, d) * 0.45;
+            gl_FragColor = vec4(mix(c, uw, uUnder), 1.0);
           }`,
         depthWrite: false, depthTest: false,
       });
@@ -94,9 +98,14 @@ G.post = (function () {
     G.renderer.render(quadScene, quadCam);
   }
 
+  let underTarget = 0;
+  P.setUnderwater = function (u) { underTarget = u ? 1 : 0; };
+
   P.render = function () {
     if (!ok) { G.renderer.render(G.scene, G.camera); return; }
     try {
+      const uu = matCombine.uniforms.uUnder;
+      uu.value += (underTarget - uu.value) * 0.09;
       const size = G.renderer.getDrawingBufferSize(new THREE.Vector2());
       if (size.x !== W || size.y !== H) build(size.x, size.y);
 

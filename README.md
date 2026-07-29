@@ -24,7 +24,18 @@ capture the mouse; press **ESC** to release it / pause.
 | **SHIFT** | 💨 Dash (brief invincibility — your dodge) |
 | **TAB** | 🗺️ World map (a minimap is always in the corner) |
 | **H** | Swap cosmetic hats & accessories |
+| **J** | 🎨 Swap skin colors (unlocked by finding relics) |
+| **P** | 📷 Photo mode — free camera, ENTER saves a PNG |
 | **M** | Toggle music |
+
+🎮 **Gamepad supported**: left stick swim, right stick look, A jump, B dash, X whip,
+Y whirlpool, LB shield, RT charge blast, RB hat, Select map, Start pause.
+
+Progress **saves automatically** at every milestone — CONTINUE appears on the title
+screen. After freeing the Crystal Catfish King, ride his back for a victory lap!
+Dive underwater for light shafts and muffled dreamy sound, watch for fish schools,
+dragonflies, birds and log-snails, shooting stars at night, and a rainbow when the
+crystal-rain clears.
 
 ## The journey
 

@@ -89,6 +89,7 @@ G.pickupSys = (function () {
           G.state.pearls++;
           G.audio.play('pearl');
           G.fx.sparkle(m.position, 0x9fefff, 6);
+          for (const b of G.state.babies) b.spinT = 0.9;   // babies cheer!
           G.ui.hud();
           G.scene.remove(m); items.splice(i, 1);
           continue;
@@ -120,7 +121,10 @@ G.pickupSys = (function () {
           G.audio.play('chest');
           G.fx.burst(m.position, 0xffd85f, 24, 5);
           G.ui.unlock('RELIC FOUND', `${it.name}  (${G.state.relics}/3 ancient relics)`);
+          G.ui.toast('✨ New skin color unlocked — press J!', 4200);
           G.ui.hud();
+          G.save.markCollected('relic:' + it.name);
+          G.save.write();
           G.scene.remove(m); items.splice(i, 1);
           continue;
         }
@@ -137,6 +141,8 @@ G.pickupSys = (function () {
             G.fx.burst(m.position, 0xffb3d8, 20, 4);
             G.ui.unlock('BABY RESCUED', `${it.name} joins you!  (${G.state.babies.length}/3 lost babies)`);
             G.ui.hud();
+            G.save.markCollected('baby:' + it.name);
+            G.save.write();
           }
         } else {
           // follow in a chain behind the player
@@ -148,6 +154,12 @@ G.pickupSys = (function () {
           m.position.lerp(target, 1 - Math.exp(-3.2 * dt));
           m.rotation.y = U.angleDamp(m.rotation.y, G.player.yaw - Math.PI / 2, 6, dt);
           m.position.y += Math.sin(it.t * 5 + it.followIdx) * 0.01;
+          if (it.spinT > 0) {         // happy pirouette when a pearl is collected
+            it.spinT -= dt;
+            m.rotation.y += dt * 15;
+            m.position.y += Math.sin(it.spinT * 14) * 0.03;
+            if (Math.random() < dt * 6) G.fx.sparkle(m.position, 0xffd8ea, 2, 0.3);
+          }
         }
       } else if (it.kind === 'chest') {
         if (!it.opened) {
@@ -160,6 +172,8 @@ G.pickupSys = (function () {
             G.player.addCosmetic(it.cosmetic);
             G.ui.unlock('TREASURE!', `${it.label} — press H to swap accessories`);
             P.spawnPearl(m.position, 3);
+            G.save.markCollected('chest:' + it.cosmetic);
+            G.save.write();
           }
         }
       }

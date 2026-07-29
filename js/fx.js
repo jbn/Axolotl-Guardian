@@ -61,8 +61,32 @@ G.fx = (function () {
     return { r: c.r, g: c.g, b: c.b };
   }
 
+  // ---------------- game-feel juice: hit-stop + camera shake ----------------
+  let stopT = 0, shakeT = 0, shakeDur = 0, shakeAmp = 0;
+
   return {
     init,
+    // brief slow-motion freeze on meaty hits
+    hitStop(d) { stopT = Math.max(stopT, d); },
+    // decaying camera shake
+    shake(amp, dur) {
+      if (amp >= shakeAmp * (shakeT / Math.max(shakeDur, 0.001))) {
+        shakeAmp = amp; shakeDur = dur; shakeT = dur;
+      }
+    },
+    // called with real dt; returns the timescale for game updates this frame
+    timeScale(dt) {
+      if (stopT > 0) { stopT -= dt; return 0.1; }
+      return 1;
+    },
+    applyShake(cam, dt) {
+      if (shakeT <= 0) return;
+      shakeT -= dt;
+      const a = shakeAmp * (shakeT / shakeDur);
+      cam.position.x += U.rand(-a, a);
+      cam.position.y += U.rand(-a, a) * 0.6;
+      cam.position.z += U.rand(-a, a);
+    },
     // radial burst
     burst(pos, hex, n = 14, speed = 5, size = 0.6, life = 0.7, grav = 0) {
       const c = colorOf(hex);

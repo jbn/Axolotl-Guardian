@@ -11,7 +11,10 @@ G.world = (function () {
   let caveCrystals = [], godRays = [], shrines = [];
   let terrainMesh;
   let sunSprite, moonSprite, stars, starsBright, clouds = [], cloudMat;
+  let shaftGrp, weedMesh, weedData = [], rainbow, rainbowT = 0;
+  const meteors = [];
   const _dir = new THREE.Vector3();
+  const _m4 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _s = new THREE.Vector3();
 
   // ---------------- Zone layout ----------------
   const ZONES = {
@@ -541,6 +544,63 @@ G.world = (function () {
     makeGodRays(zc.x, zc.z, 4, 0x7fe8ff);
   }
 
+  // ---------------- underwater dressing ----------------
+  function makeUnderwaterFX() {
+    // light shafts that follow the player while submerged
+    shaftGrp = new THREE.Group();
+    const mat = new THREE.MeshBasicMaterial({ color: 0xbfeaff, transparent: true, opacity: 0.055, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, side: THREE.DoubleSide });
+    for (let i = 0; i < 9; i++) {
+      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(U.rand(0.5, 1.2), U.rand(2.2, 4), 22, 7, 1, true), mat);
+      shaft.position.set(U.rand(-16, 16), -6, U.rand(-16, 16));
+      shaft.rotation.z = U.rand(-0.15, 0.15);
+      shaftGrp.add(shaft);
+    }
+    shaftGrp.visible = false;
+    G.scene.add(shaftGrp);
+
+    // swaying seaweed in the deeper channels (tinted reuse of the reed mesh)
+    const reed = G.assets.geo('reed');
+    const weedMat = new THREE.MeshLambertMaterial({ vertexColors: true, color: 0x5a9aa8 });
+    const spots = [];
+    let guard = 0;
+    while (spots.length < 110 && guard++ < 4000) {
+      const x = U.rand(-200, 200), z = U.rand(-215, 215);
+      const h = W.heightAt(x, z);
+      if (h > -1.8) continue;
+      spots.push({ x, z, y: h - 0.1, s: U.rand(1.1, 2.4), ry: U.rand(0, U.TAU), ph: U.rand(0, 9) });
+    }
+    weedMesh = new THREE.InstancedMesh(reed.geometry, weedMat, spots.length);
+    weedData = spots;
+    G.scene.add(weedMesh);
+  }
+
+  function updateSeaweed(t) {
+    for (let i = 0; i < weedData.length; i++) {
+      const w = weedData[i];
+      _e.set(Math.sin(t * 1.1 + w.ph) * 0.16, w.ry, Math.cos(t * 0.9 + w.ph * 1.7) * 0.16);
+      _q.setFromEuler(_e);
+      _s.set(w.s, w.s, w.s);
+      _m4.compose(U.v1.set(w.x, w.y, w.z), _q, _s);
+      weedMesh.setMatrixAt(i, _m4);
+    }
+    weedMesh.instanceMatrix.needsUpdate = true;
+  }
+
+  // ---------------- rainbow (appears when crystal-rain clears) ----------------
+  function makeRainbow() {
+    rainbow = new THREE.Group();
+    const cols = [0xff5f5f, 0xffb44f, 0xffe95f, 0x6fdf7f, 0x5fb8ff, 0xa06fff];
+    cols.forEach((c, i) => {
+      const arc = new THREE.Mesh(new THREE.TorusGeometry(58 - i * 2.3, 1.05, 6, 40, Math.PI),
+        new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+      rainbow.add(arc);
+    });
+    rainbow.position.set(-20, -6, 95);
+    rainbow.rotation.y = 0.35;
+    rainbow.visible = false;
+    G.scene.add(rainbow);
+  }
+
   function makeGodRays(cx, cz, n, color) {
     const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.07, depthWrite: false, blending: THREE.AdditiveBlending, fog: false });
     for (let i = 0; i < n; i++) {
@@ -742,6 +802,8 @@ G.world = (function () {
     makeLights();
     makeTerrain();
     makeWater();
+    makeUnderwaterFX();
+    makeRainbow();
     makeVegetation();
     makeRuins();
     makeCavern();
@@ -806,10 +868,22 @@ G.world = (function () {
     skyMat.uniforms.uTop.value.copy(sk.top).multiplyScalar(rainDim);
     skyMat.uniforms.uBottom.value.copy(sk.bottom).multiplyScalar(rainDim);
     G.scene.fog.color.copy(sk.fog).multiplyScalar(rainDim);
-    // underwater tint
+    // underwater tint + muffled audio + dreamy light shafts and bubbles
     const underwater = G.camera.position.y < -0.15;
     G.scene.fog.density = underwater ? 0.028 : (env.raining ? 0.012 : 0.0088);
     if (underwater) G.scene.fog.color.set(0x1a6f9c).multiplyScalar(0.55 + sk.intensity * 0.4);
+    G.audio.setUnderwater(underwater);
+    G.post.setUnderwater(underwater);
+    W.underwater = underwater;
+    shaftGrp.visible = underwater && sk.intensity > 0.25;
+    if (shaftGrp.visible && G.player) {
+      shaftGrp.position.set(G.player.pos.x, 0, G.player.pos.z);
+      shaftGrp.rotation.y = t * 0.05;
+    }
+    if (underwater && G.player && Math.random() < dt * 7) {
+      G.fx.sparkle(U.v1.set(G.player.pos.x + U.rand(-9, 9), G.player.pos.y + U.rand(-2, 1), G.player.pos.z + U.rand(-9, 9)), 0xbfe8ff, 2, 0.32);
+    }
+    updateSeaweed(t);
 
     const sunA = (env.t - 0.25) * U.TAU; // sunrise east
     const px = G.player ? G.player.pos.x : 0, pz = G.player ? G.player.pos.z : 0;
@@ -844,6 +918,30 @@ G.world = (function () {
     if (night && !underwater && Math.random() < dt * 6) {
       G.fx.trailDot(U.v1.set(px + U.rand(-16, 16), U.rand(0.5, 4), pz + U.rand(-16, 16)), 0xbfff7a, U.rand(0.25, 0.5), 1.4);
     }
+    // shooting stars
+    if (night && !env.raining && Math.random() < dt * 0.09) {
+      const a = U.rand(0, U.TAU);
+      meteors.push({
+        x: px + Math.cos(a) * U.rand(80, 160), y: U.rand(70, 120), z: pz + Math.sin(a) * U.rand(80, 160),
+        vx: U.rand(-55, 55), vy: U.rand(-26, -14), vz: U.rand(-55, 55), life: U.rand(0.9, 1.5),
+      });
+    }
+    for (let i = meteors.length - 1; i >= 0; i--) {
+      const m = meteors[i];
+      m.life -= dt;
+      m.x += m.vx * dt; m.y += m.vy * dt; m.z += m.vz * dt;
+      G.fx.trailDot(U.v1.set(m.x, m.y, m.z), 0xeaf4ff, 1.5, 0.7);
+      if (Math.random() < 0.6) G.fx.trailDot(U.v1.set(m.x + U.rand(-1, 1), m.y + U.rand(-1, 1), m.z), 0x9fd0ff, 0.8, 0.9);
+      if (m.life <= 0) meteors.splice(i, 1);
+    }
+    // rainbow after the rain
+    if (rainbowT > 0) {
+      rainbowT -= dt;
+      rainbow.visible = rainbowT > 0;
+      const op = Math.min(1, (22 - rainbowT) / 3, rainbowT / 4) * 0.22;
+      rainbow.children.forEach(arc => { arc.material.opacity = op; });
+    }
+    W.daylight = sk.intensity;
 
     // weather
     if (!env.raining) {
@@ -864,6 +962,10 @@ G.world = (function () {
       if (env.rainLeft <= 0) {
         env.raining = false; rainPts.visible = false;
         env.rainTimer = U.rand(140, 220);
+        if (sk.intensity > 0.3) {
+          rainbowT = 22;
+          G.ui.toast('🌈 A rainbow arcs over the marsh!', 3600);
+        }
       }
       // move rain
       const pos = rainPts.geometry.attributes.position;

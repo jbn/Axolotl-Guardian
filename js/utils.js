@@ -2,9 +2,11 @@
 window.G = {
   scene: null, camera: null, renderer: null,
   player: null, world: null, enemies: [], pickups: [], boss: null,
-  state: null, keys: {}, mouse: { down: false, rdown: false },
+  state: null, keys: {}, pad: {}, mouse: { down: false, rdown: false },
   time: 0, paused: false,
 };
+// merged keyboard + gamepad lookup
+G.key = c => G.keys[c] || G.pad[c];
 
 const U = window.U = {
   TAU: Math.PI * 2,

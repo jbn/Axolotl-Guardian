@@ -32,6 +32,8 @@
   function die(e, opts = {}) {
     e.alive = false;
     G.state.kills++;
+    G.fx.hitStop(0.06);
+    G.fx.shake(0.12, 0.2);
     G.audio.play('enemyDie');
     G.fx.burst(e.pos, CORRUPT, 18, 6);
     G.fx.burst(e.pos, 0x9fefff, 14, 4);

@@ -1,13 +1,18 @@
 // Axolotl Guardian — procedural WebAudio: SFX + generative marsh music
 G.audio = (function () {
-  let ctx = null, master = null, musicGain = null, sfxGain = null;
-  let musicOn = true, started = false;
+  let ctx = null, master = null, musicGain = null, sfxGain = null, lowpass = null;
+  let musicOn = true, started = false, underwater = false;
   let noiseBuf = null;
 
   function init() {
     if (ctx) return;
     ctx = new (window.AudioContext || window.webkitAudioContext)();
-    master = ctx.createGain(); master.gain.value = 0.9; master.connect(ctx.destination);
+    // everything runs through a lowpass so diving muffles the whole world
+    lowpass = ctx.createBiquadFilter();
+    lowpass.type = 'lowpass';
+    lowpass.frequency.value = 21000;
+    lowpass.connect(ctx.destination);
+    master = ctx.createGain(); master.gain.value = 0.9; master.connect(lowpass);
     sfxGain = ctx.createGain(); sfxGain.gain.value = 0.85; sfxGain.connect(master);
     musicGain = ctx.createGain(); musicGain.gain.value = 0.38; musicGain.connect(master);
     // pre-render 1s of noise
@@ -142,5 +147,11 @@ G.audio = (function () {
       return musicOn;
     },
     duck(v) { if (musicGain) musicGain.gain.value = v ? 0.16 : 0.38; },
+    setUnderwater(u) {
+      if (!ctx || u === underwater) return;
+      underwater = u;
+      lowpass.frequency.setTargetAtTime(u ? 640 : 21000, ctx.currentTime, 0.12);
+      master.gain.setTargetAtTime(u ? 1.0 : 0.9, ctx.currentTime, 0.12);
+    },
   };
 })();

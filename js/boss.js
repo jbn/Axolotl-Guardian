@@ -53,6 +53,7 @@ G.makeBoss = function () {
   B.hit = function (dmg, kind, fromPos) {
     if (!B.alive || B.defeated) return;
     const mult = stagger > 0 ? 2 : 1;
+    if (stagger > 0) G.fx.hitStop(0.05);
     B.hp = Math.max(0, B.hp - dmg * mult);
     flash = 0.12;
     bodyMat.emissive.set(0xffffff); bodyMat.emissiveIntensity = 1;
@@ -92,6 +93,7 @@ G.makeBoss = function () {
     shockwaves.push({ m, r: 1, speed: 13 });
     G.audio.play('blast');
     G.fx.splash(B.pos, 26);
+    G.fx.shake(0.55, 0.6);
   }
 
   function spawnShardVolley(n) {
@@ -231,6 +233,8 @@ G.makeBoss = function () {
       if (crashed || (p >= 3 && outOfArena && chargeCount % 3 === 2)) {
         chargeCount++;
         stagger = 4.2;
+        G.fx.shake(0.8, 0.8);
+        G.fx.hitStop(0.09);
         G.audio.play('crack');
         G.fx.ring(B.pos, 0xff5fbe, 8, 0.9);
         G.ui.toast('💥 The King is dazed — strike the heart crystal!');
@@ -363,6 +367,52 @@ G.makeBoss = function () {
   };
   B.headWorldPos = function () { return headGrp.getWorldPosition(U.v1).clone(); };
   B.ARENA = ARENA;
+
+  // ---------------- postgame victory lap ----------------
+  // scenic waypoint tour of the whole marsh, following the channels
+  const RIDE_PATH = [
+    [0, -185], [-25, -150], [-50, -118], [-62, -95], [-40, -60], [-18, -22],
+    [0, 8], [-16, 44], [4, 78], [-8, 118], [4, 152], [0, 185],
+    [22, 152], [8, 112], [24, 62], [34, 18], [44, -32], [60, -75],
+    [62, -100], [32, -140], [0, -168],
+  ];
+  let rideIdx = 0;
+  B.headingYaw = 0;
+
+  B.startRide = function () {
+    B.alive = false;
+    B.defeated = true;
+    grp.visible = true;
+    grp.rotation.x = 0;
+    grp.rotation.z = 0;
+    B.cleanse(1);
+    heartCrys.visible = false;
+    B.pos.set(0, -1.4, -180);
+    rideIdx = 0;
+    vel.set(0, 0, 6);
+  };
+
+  B.rideUpdate = function (dt) {
+    const wp = RIDE_PATH[rideIdx];
+    U.v1.set(wp[0] - B.pos.x, 0, wp[1] - B.pos.z);
+    if (U.v1.length() < 9) rideIdx = (rideIdx + 1) % RIDE_PATH.length;
+    U.v1.normalize().multiplyScalar(13);
+    vel.lerp(U.v1, 1 - Math.exp(-1.4 * dt));
+    B.pos.x += vel.x * dt;
+    B.pos.z += vel.z * dt;
+    const gh = G.world.heightAt(B.pos.x, B.pos.z);
+    const ty = Math.max(gh + 1.7, -1.6) + Math.sin(G.time * 0.9) * 0.25;
+    B.pos.y = U.damp(B.pos.y, ty, 2, dt);
+    B.headingYaw = Math.atan2(vel.x, vel.z);
+    grp.rotation.y = U.angleDamp(grp.rotation.y, B.headingYaw - Math.PI / 2 + Math.PI, 2.5, dt);
+    if (Math.random() < dt * 10) G.fx.trailDot(U.v3.set(B.pos.x + U.rand(-3, 3), 0.15, B.pos.z + U.rand(-3, 3)), 0xd8f6ff, 0.9, 0.6);
+    if (Math.random() < dt * 2) G.fx.ring(U.v3.set(B.pos.x, 0.05, B.pos.z), 0xd8f6ff, 5, 1);
+  };
+
+  B.mountPos = function () {
+    grp.updateMatrixWorld();
+    return U.v3.set(0, 2.7, 0).applyMatrix4(grp.matrixWorld);
+  };
 
   return B;
 };

@@ -17,6 +17,16 @@ G.makePlayer = function () {
   gills.forEach(g => { g.userData.ry0 = g.rotation.y; });
   legs.forEach(l => { l.userData.y0 = l.position.y; l.userData.rx0 = l.rotation.x; });
 
+  // skin tints (multiply the vertex-colored materials) — unlocked by relics
+  const SKINS = [
+    { name: 'Rose Pink', tint: 0xffffff },
+    { name: 'Golden Albino', tint: 0xffe9a0 },
+    { name: 'Moonlight Lucy', tint: 0x9fc0ff },
+    { name: 'Wild Shadow', tint: 0x8a7a6a },
+  ];
+  const skinMats = new Set();
+  model.traverse(o => { if (o.isMesh && o.material.vertexColors && !o.material.transparent) skinMats.add(o.material); });
+
   // bubble shield mesh
   const shieldMesh = new THREE.Mesh(new THREE.SphereGeometry(1.5, 18, 14),
     new THREE.MeshPhongMaterial({ color: 0x9fe8ff, transparent: true, opacity: 0.28, shininess: 120, depthWrite: false, side: THREE.DoubleSide }));
@@ -108,7 +118,7 @@ G.makePlayer = function () {
       e.hit(1, 'whip', P.pos);
       hitAny = true;
     }
-    if (hitAny) G.audio.play('whipHit');
+    if (hitAny) { G.audio.play('whipHit'); G.fx.hitStop(0.035); }
   };
 
   P.startCharge = function () {
@@ -173,8 +183,8 @@ G.makePlayer = function () {
     G.audio.play('dash');
     const dir = new THREE.Vector3();
     // dash along input direction, or facing if idle
-    const ix = (G.keys['KeyD'] ? 1 : 0) - (G.keys['KeyA'] ? 1 : 0);
-    const iz = (G.keys['KeyS'] ? 1 : 0) - (G.keys['KeyW'] ? 1 : 0);
+    const ix = (G.key('KeyD') ? 1 : 0) - (G.key('KeyA') ? 1 : 0);
+    const iz = (G.key('KeyS') ? 1 : 0) - (G.key('KeyW') ? 1 : 0);
     if (ix || iz) {
       dir.set(ix, 0, iz).normalize();
       dir.applyAxisAngle(U.v1.set(0, 1, 0), P.camYaw);
@@ -208,6 +218,8 @@ G.makePlayer = function () {
     G.state.hearts -= n;
     P.invuln = 1.2;
     G.audio.play('hurt');
+    G.fx.shake(0.3, 0.35);
+    G.fx.hitStop(0.05);
     G.ui.hurtFlash();
     G.ui.hud();
     if (fromPos) {
@@ -241,10 +253,36 @@ G.makePlayer = function () {
     if (owned[idx] !== 'none') G.audio.play('pearl');
   };
 
+  P.applySkin = function (idx) {
+    idx = U.clamp(idx, 0, SKINS.length - 1);
+    G.state.skin = idx;
+    skinMats.forEach(m => m.color.set(SKINS[idx].tint));
+  };
+  P.cycleSkin = function () {
+    const unlocked = 1 + Math.min(G.state.relics, SKINS.length - 1);
+    if (unlocked <= 1) {
+      G.ui.toast('🏺 Find ancient relics to unlock new colors!');
+      return;
+    }
+    P.applySkin((G.state.skin + 1) % unlocked);
+    G.audio.play('pearl');
+    G.ui.toast(`✨ ${SKINS[G.state.skin].name}`, 2000);
+  };
+
   // ---------------- Update ----------------
   const camTarget = new THREE.Vector3();
   P.update = function (dt) {
     if (P.dead) return;
+    if (P.riding) {
+      // carried on the King's back — just look pretty and steer the camera
+      grp.rotation.y = P.yaw - Math.PI / 2;
+      grp.rotation.z = 0;
+      tailGrp.rotation.y = Math.sin(G.time * 5) * 0.35;
+      gills.forEach((g, i) => { g.rotation.y = g.userData.ry0 + Math.sin(G.time * 2.6 + i) * 0.18; });
+      if (Math.random() < dt * 10) G.fx.trailDot(U.v2.copy(P.pos).add(U.v3.set(U.rand(-1, 1), -0.5, U.rand(-1, 1))), 0xcfeeff, 0.4, 0.6);
+      updateCamera(dt);
+      return;
+    }
     // cooldowns
     for (const k in cd) cd[k] = Math.max(0, cd[k] - dt);
     P.invuln = Math.max(0, P.invuln - dt);
@@ -255,8 +293,8 @@ G.makePlayer = function () {
     P.inWater = P.pos.y < WATER_Y + 0.15 && groundH < -0.45 && !(pad && P.pos.y > pad.y - 0.1);
 
     // input direction (camera relative)
-    const ix = (G.keys['KeyD'] ? 1 : 0) - (G.keys['KeyA'] ? 1 : 0);
-    const iz = (G.keys['KeyS'] ? 1 : 0) - (G.keys['KeyW'] ? 1 : 0);
+    const ix = (G.key('KeyD') ? 1 : 0) - (G.key('KeyA') ? 1 : 0);
+    const iz = (G.key('KeyS') ? 1 : 0) - (G.key('KeyW') ? 1 : 0);
     const moveDir = U.v1.set(ix, 0, iz);
     const moving = moveDir.lengthSq() > 0;
     if (moving) moveDir.normalize().applyAxisAngle(U.v2.set(0, 1, 0), P.camYaw);
@@ -275,8 +313,8 @@ G.makePlayer = function () {
         P.vel.z += moveDir.z * accel * dt;
         P.vel.y += vertFactor * accel * 0.8 * dt;
       }
-      if (G.keys['Space']) P.vel.y += 30 * dt;
-      if (G.keys['KeyC']) P.vel.y -= 30 * dt;
+      if (G.key('Space')) P.vel.y += 30 * dt;
+      if (G.key('KeyC')) P.vel.y -= 30 * dt;
       // buoyancy toward surface + drag
       P.vel.y += (P.pos.y < -1.5 ? 1.2 : 0.4) * dt;
       const drag = Math.exp(-3.4 * dt);
@@ -286,7 +324,8 @@ G.makePlayer = function () {
       // breach: leap out of water
       if (P.pos.y > WATER_Y - 0.35 && P.vel.y > 4.5) {
         G.audio.play('splash');
-        G.fx.splash(P.pos);
+        G.fx.splash(P.pos, 34);
+        G.fx.ring(U.v3.set(P.pos.x, 0.05, P.pos.z), 0xe8faff, 3.4, 0.7);
       }
     } else {
       // land / lily pad
@@ -301,7 +340,7 @@ G.makePlayer = function () {
       const maxH = dashT > 0 ? 22 : 7.5 * chargeSlow;
       const hv = Math.hypot(P.vel.x, P.vel.z);
       if (hv > maxH) { P.vel.x *= maxH / hv; P.vel.z *= maxH / hv; }
-      if (G.keys['Space'] && P.onGround && !P.jumpHeld) {
+      if (G.key('Space') && P.onGround && !P.jumpHeld) {
         P.vel.y = 8.5;
         P.onGround = false;
         P.jumpHeld = true;
@@ -309,7 +348,7 @@ G.makePlayer = function () {
         if (pad) G.fx.ring(U.v2.set(P.pos.x, pad.y + 0.05, P.pos.z), 0xaef3c8, 1.6, 0.4);
       }
     }
-    if (!G.keys['Space']) P.jumpHeld = false;
+    if (!G.key('Space')) P.jumpHeld = false;
 
     dashT = Math.max(0, dashT - dt);
     P.pos.addScaledVector(P.vel, dt);
@@ -335,6 +374,13 @@ G.makePlayer = function () {
     if (P.pos.y > 14) P.pos.y = 14;
 
     G.world.collide(P.pos, 0.7);
+
+    // surface ripples trail behind a swimming axolotl
+    P.rippleT = (P.rippleT || 0) - dt;
+    if (P.inWater && P.pos.y > -1.1 && Math.hypot(P.vel.x, P.vel.z) > 2.5 && P.rippleT <= 0) {
+      P.rippleT = 0.16;
+      G.fx.ring(U.v2.set(P.pos.x, 0.03, P.pos.z), 0xd8f6ff, U.rand(1.3, 2), 0.75);
+    }
 
     // charging
     if (charging) {
