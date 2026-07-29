@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Axolotl Guardian: Secrets of the Sunken Marsh</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #06121e; }
+  body { font-family: "Avenir Next", "Trebuchet MS", Verdana, sans-serif; user-select: none; -webkit-user-select: none; }
+  #game-canvas { display: block; width: 100%; height: 100%; }
+
+  /* ---------- HUD ---------- */
+  #hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; display: none; }
+  #hearts { position: absolute; top: 18px; left: 20px; display: flex; gap: 5px; }
+  .heart { width: 26px; height: 26px; filter: drop-shadow(0 2px 3px rgba(0,0,0,.5)); transition: transform .15s; }
+  .heart.lost { opacity: .25; filter: grayscale(1); }
+  #pearl-box { position: absolute; top: 52px; left: 22px; display: flex; align-items: center; gap: 8px;
+    color: #eafcff; font-size: 20px; font-weight: 700; text-shadow: 0 2px 4px rgba(0,0,0,.6); }
+  #pearl-icon { width: 20px; height: 20px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #ffffff, #a8f0ff 40%, #2fa8c8);
+    box-shadow: 0 0 10px #7fe3ff; }
+  #collect-box { position: absolute; top: 88px; left: 22px; color: #cfeaff; font-size: 13px; font-weight: 600;
+    text-shadow: 0 1px 3px rgba(0,0,0,.7); line-height: 1.5; }
+  #objective { position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+    color: #fff8e0; font-size: 15px; font-weight: 700; letter-spacing: .3px;
+    background: rgba(10, 30, 40, .55); border: 1px solid rgba(140, 220, 255, .35);
+    padding: 8px 18px; border-radius: 20px; text-shadow: 0 1px 2px rgba(0,0,0,.6);
+    max-width: 70%; text-align: center; }
+  #abilities { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; }
+  .ability { width: 52px; height: 52px; border-radius: 12px; position: relative;
+    background: rgba(8, 28, 42, .75); border: 2px solid rgba(120, 200, 240, .5);
+    display: flex; align-items: center; justify-content: center; flex-direction: column;
+    color: #d7f4ff; font-size: 20px; overflow: hidden; }
+  .ability .key { position: absolute; bottom: 1px; right: 4px; font-size: 9px; font-weight: 700; color: #9fdcf5; }
+  .ability .cd { position: absolute; left: 0; bottom: 0; width: 100%; background: rgba(40, 120, 180, .55); height: 0%; }
+  .ability.locked { opacity: .28; filter: grayscale(.8); }
+  .ability.flash { border-color: #ffe98a; box-shadow: 0 0 14px #ffe98a; }
+  #boss-bar-wrap { position: absolute; bottom: 92px; left: 50%; transform: translateX(-50%);
+    width: min(560px, 70%); display: none; }
+  #boss-name { text-align: center; color: #ffd9f0; font-weight: 800; font-size: 16px; letter-spacing: 1px;
+    text-shadow: 0 2px 4px rgba(0,0,0,.8); margin-bottom: 5px; }
+  #boss-bar-bg { height: 14px; border-radius: 8px; background: rgba(0,0,0,.55); border: 1px solid rgba(255,160,220,.5); overflow: hidden; }
+  #boss-bar { height: 100%; width: 100%; border-radius: 7px;
+    background: linear-gradient(90deg, #ff6fb0, #c05cff); transition: width .2s; }
+  #toast { position: absolute; bottom: 150px; left: 50%; transform: translateX(-50%);
+    color: #ffffff; font-size: 17px; font-weight: 700; text-shadow: 0 2px 5px rgba(0,0,0,.8);
+    background: rgba(15, 40, 55, .6); padding: 8px 20px; border-radius: 18px;
+    opacity: 0; transition: opacity .3s; max-width: 80%; text-align: center; }
+  #charge-ring { position: absolute; left: 50%; top: 50%; width: 60px; height: 60px; margin: -30px 0 0 -30px;
+    border-radius: 50%; border: 3px solid rgba(140, 230, 255, .0); display: none; }
+  #crosshair { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px;
+    border-radius: 50%; background: rgba(255,255,255,.75); box-shadow: 0 0 5px rgba(0,0,0,.7); }
+  #vignette { position: fixed; inset: 0; pointer-events: none; z-index: 9; opacity: 0;
+    background: radial-gradient(ellipse at center, transparent 55%, rgba(200, 30, 40, .55) 100%); transition: opacity .25s; }
+
+  /* ---------- Overlay screens ---------- */
+  .screen { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center;
+    flex-direction: column; text-align: center; }
+  #title-screen { background: radial-gradient(ellipse at 50% 30%, #10475e 0%, #072433 55%, #04121d 100%); }
+  #title-screen h1 { font-size: clamp(34px, 6vw, 64px); color: #ffd7ea; letter-spacing: 1px;
+    text-shadow: 0 0 30px rgba(255, 130, 190, .55), 0 4px 0 rgba(120, 30, 70, .6); margin-bottom: 4px; }
+  #title-screen h2 { font-size: clamp(16px, 2.4vw, 24px); color: #9fe8ff; font-weight: 600;
+    letter-spacing: 4px; text-transform: uppercase; margin-bottom: 30px; text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+  .big-btn { pointer-events: auto; cursor: pointer; font-size: 22px; font-weight: 800; color: #063040;
+    background: linear-gradient(180deg, #aef3ff, #5fd3ef); border: none; border-radius: 30px;
+    padding: 14px 54px; letter-spacing: 1px; box-shadow: 0 6px 0 #2f8faa, 0 10px 24px rgba(0,0,0,.45);
+    transition: transform .1s, box-shadow .1s; font-family: inherit; }
+  .big-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 0 #2f8faa, 0 14px 28px rgba(0,0,0,.5); }
+  .big-btn:active { transform: translateY(3px); box-shadow: 0 2px 0 #2f8faa, 0 6px 14px rgba(0,0,0,.5); }
+  #controls-hint { margin-top: 34px; color: #bfe8f5; font-size: 14px; line-height: 2; }
+  #controls-hint b { color: #fff; background: rgba(255,255,255,.14); border-radius: 6px; padding: 1px 8px; margin: 0 2px;
+    border: 1px solid rgba(255,255,255,.25); font-weight: 700; }
+  .screen p.flavor { color: #d8f2e8; max-width: 620px; font-size: 16px; line-height: 1.65; margin-bottom: 28px; padding: 0 20px; }
+  #axolotl-emblem { font-size: 74px; margin-bottom: 8px; filter: drop-shadow(0 6px 14px rgba(255,120,180,.4)); }
+  #pause-screen, #death-screen, #win-screen { background: rgba(4, 16, 26, .82); display: none; backdrop-filter: blur(4px); }
+  .screen h1 { color: #ffe9f4; font-size: 42px; margin-bottom: 18px; text-shadow: 0 3px 10px rgba(0,0,0,.7); }
+  #win-stats { color: #cdeffb; font-size: 17px; line-height: 2.1; margin-bottom: 26px; }
+  #win-stats b { color: #ffe98a; }
+
+  /* ---------- Cinematic bars & unlock banner ---------- */
+  .cine-bar { position: fixed; left: 0; width: 100%; height: 0; background: #000; z-index: 15; transition: height .8s; }
+  #cine-top { top: 0; } #cine-bottom { bottom: 0; }
+  body.cine .cine-bar { height: 10vh; }
+  #subtitle { position: fixed; bottom: 12vh; left: 50%; transform: translateX(-50%); z-index: 16;
+    color: #ffefc8; font-size: 19px; font-weight: 600; text-shadow: 0 2px 6px #000; text-align: center;
+    max-width: 76%; opacity: 0; transition: opacity .4s; }
+  #unlock-banner { position: fixed; top: 30%; left: 50%; transform: translate(-50%, -50%) scale(.8); z-index: 18;
+    text-align: center; opacity: 0; transition: opacity .4s, transform .4s; pointer-events: none; }
+  #unlock-banner .ub-title { font-size: 34px; font-weight: 900; color: #ffe98a; letter-spacing: 2px;
+    text-shadow: 0 0 24px rgba(255, 220, 120, .8), 0 3px 6px rgba(0,0,0,.8); }
+  #unlock-banner .ub-desc { font-size: 16px; color: #e8fbff; margin-top: 6px; text-shadow: 0 2px 4px rgba(0,0,0,.8); }
+  #unlock-banner.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  #fader { position: fixed; inset: 0; background: #000; z-index: 30; opacity: 0; pointer-events: none; transition: opacity 1.2s; }
+</style>
+</head>
+<body>
+<canvas id="game-canvas"></canvas>
+<div id="vignette"></div>
+
+<div id="hud">
+  <div id="hearts"></div>
+  <div id="pearl-box"><div id="pearl-icon"></div><span id="pearl-count">0</span></div>
+  <div id="collect-box"></div>
+  <div id="objective">Explore the Sunlit Marsh</div>
+  <div id="crosshair"></div>
+  <div id="charge-ring"></div>
+  <div id="abilities">
+    <div class="ability" id="ab-whip">🌊<span class="key">LMB</span><div class="cd"></div></div>
+    <div class="ability locked" id="ab-blast">💧<span class="key">RMB</span><div class="cd"></div></div>
+    <div class="ability locked" id="ab-shield">🫧<span class="key">Q</span><div class="cd"></div></div>
+    <div class="ability locked" id="ab-whirl">🌀<span class="key">E</span><div class="cd"></div></div>
+    <div class="ability" id="ab-dash">💨<span class="key">SHIFT</span><div class="cd"></div></div>
+  </div>
+  <div id="boss-bar-wrap">
+    <div id="boss-name">CRYSTAL CATFISH KING</div>
+    <div id="boss-bar-bg"><div id="boss-bar"></div></div>
+  </div>
+  <div id="toast"></div>
+</div>
+
+<div class="cine-bar" id="cine-top"></div>
+<div class="cine-bar" id="cine-bottom"></div>
+<div id="subtitle"></div>
+<div id="unlock-banner"><div class="ub-title"></div><div class="ub-desc"></div></div>
+
+<div class="screen" id="title-screen">
+  <div id="axolotl-emblem">🌸</div>
+  <h1>Axolotl Guardian</h1>
+  <h2>Secrets of the Sunken Marsh</h2>
+  <p class="flavor">Dark crystal spores are corrupting the wetland's creatures. As the marsh's smallest — and
+    bravest — guardian, swim, leap, and splash your way to the Sunken Temple and cleanse the corruption at its source.</p>
+  <button class="big-btn" id="play-btn">▶&nbsp; PLAY</button>
+  <div id="controls-hint">
+    <b>W A S D</b> swim &nbsp; <b>MOUSE</b> look &nbsp; <b>SPACE</b> rise / leap &nbsp; <b>C</b> dive<br>
+    <b>LMB</b> tail whip &nbsp; <b>RMB</b> hold: water blast &nbsp; <b>Q</b> bubble shield &nbsp; <b>E</b> whirlpool &nbsp; <b>SHIFT</b> dash<br>
+    <b>H</b> hat &nbsp; <b>M</b> music &nbsp; <b>ESC</b> pause
+  </div>
+</div>
+
+<div class="screen" id="pause-screen">
+  <h1>Paused</h1>
+  <p class="flavor">The marsh waits patiently, little guardian.</p>
+  <button class="big-btn" id="resume-btn">RESUME</button>
+</div>
+
+<div class="screen" id="death-screen">
+  <h1>The marsh needs you...</h1>
+  <p class="flavor">Even the bravest axolotl needs a breather. Your spirit reforms at the nearest lily shrine.</p>
+  <button class="big-btn" id="respawn-btn">TRY AGAIN</button>
+</div>
+
+<div class="screen" id="win-screen">
+  <div id="axolotl-emblem">🏆</div>
+  <h1>The Marsh Is Saved!</h1>
+  <div id="win-stats"></div>
+  <button class="big-btn" id="again-btn">PLAY AGAIN</button>
+</div>
+
+<div id="fader"></div>
+
+<script src="vendor/three.min.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/fx.js"></script>
+<script src="js/world.js"></script>
+<script src="js/pickups.js"></script>
+<script src="js/player.js"></script>
+<script src="js/enemies.js"></script>
+<script src="js/boss.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
