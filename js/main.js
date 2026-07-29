@@ -91,6 +91,7 @@
         if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') G.player.dash();
         if (e.code === 'KeyH') G.player.cycleCosmetic();
         if (e.code === 'KeyM') G.ui.toast(G.audio.toggleMusic() ? '🎵 Music on' : '🔇 Music off', 1500);
+        if (e.code === 'Tab') { e.preventDefault(); G.map.toggle(); }
         if (e.code === 'Space') e.preventDefault();
       }
     });
@@ -123,6 +124,7 @@
   function pauseGame() {
     if (mode !== 'play') return;
     mode = 'paused';
+    G.map.close();
     G.ui.show('pause-screen');
   }
   function resumeGame() {
@@ -145,6 +147,7 @@
 
   G.onPlayerDeath = function () {
     mode = 'dead';
+    G.map.close();
     document.exitPointerLock();
     G.ui.fade(true, () => {
       G.ui.show('death-screen');
@@ -480,6 +483,7 @@
     if (G.boss) G.boss.update(dt);
     G.pickupSys.update(dt);
     G.fx.update(dt);
+    G.map.update();
     G.ui.cooldowns();
 
     // frog kill tracking (for whirl shrine)
@@ -499,6 +503,7 @@
     G.fx.init();
     G.world.build();
     G.pickupSys.init();
+    G.map.init();
     G.player = G.makePlayer();
     spawnWorldEnemies();
     G.boss = G.makeBoss();

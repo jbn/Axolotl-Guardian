@@ -54,6 +54,22 @@
   #vignette { position: fixed; inset: 0; pointer-events: none; z-index: 9; opacity: 0;
     background: radial-gradient(ellipse at center, transparent 55%, rgba(200, 30, 40, .55) 100%); transition: opacity .25s; }
 
+  /* ---------- Map ---------- */
+  #minimap-wrap { position: absolute; top: 18px; right: 20px; text-align: center; }
+  #minimap { width: 156px; height: 156px; border-radius: 50%;
+    border: 2px solid rgba(120, 200, 240, .55); background: rgba(10, 40, 60, .8);
+    box-shadow: 0 4px 14px rgba(0,0,0,.4), inset 0 0 18px rgba(0, 30, 50, .3); }
+  #minimap-key { margin-top: 4px; font-size: 10px; font-weight: 700; color: #9fdcf5;
+    text-shadow: 0 1px 2px rgba(0,0,0,.7); letter-spacing: .5px; }
+  #map-screen { position: fixed; inset: 0; z-index: 14; display: none; pointer-events: none;
+    align-items: center; justify-content: center; flex-direction: column;
+    background: rgba(4, 16, 26, .74); backdrop-filter: blur(3px); }
+  #map-screen h2 { color: #ffe9f4; font-size: 24px; letter-spacing: 1px; margin-bottom: 10px;
+    text-shadow: 0 2px 8px rgba(0,0,0,.7); }
+  #map-canvas { width: min(66vh, 84vw); height: min(66vh, 84vw); border-radius: 16px;
+    border: 2px solid rgba(140, 220, 255, .45); box-shadow: 0 10px 40px rgba(0,0,0,.6); }
+  #map-hint { margin-top: 10px; color: #bfe8f5; font-size: 13px; font-weight: 600; }
+
   /* ---------- Overlay screens ---------- */
   .screen { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center;
     flex-direction: column; text-align: center; }
@@ -117,6 +133,16 @@
     <div id="boss-bar-bg"><div id="boss-bar"></div></div>
   </div>
   <div id="toast"></div>
+  <div id="minimap-wrap">
+    <canvas id="minimap" width="312" height="312"></canvas>
+    <div id="minimap-key">TAB&nbsp;·&nbsp;world map</div>
+  </div>
+</div>
+
+<div id="map-screen">
+  <h2>🗺️ Secrets of the Sunken Marsh</h2>
+  <canvas id="map-canvas" width="1000" height="1000"></canvas>
+  <div id="map-hint">⬤ you &nbsp; — gate &nbsp; ✦ secret nearby &nbsp; ◯ next goal &nbsp;·&nbsp; TAB to close</div>
 </div>
 
 <div class="cine-bar" id="cine-top"></div>
@@ -134,7 +160,7 @@
   <div id="controls-hint">
     <b>W A S D</b> swim &nbsp; <b>MOUSE</b> look &nbsp; <b>SPACE</b> rise / leap &nbsp; <b>C</b> dive<br>
     <b>LMB</b> tail whip &nbsp; <b>RMB</b> hold: water blast &nbsp; <b>Q</b> bubble shield &nbsp; <b>E</b> whirlpool &nbsp; <b>SHIFT</b> dash<br>
-    <b>H</b> hat &nbsp; <b>M</b> music &nbsp; <b>ESC</b> pause
+    <b>TAB</b> map &nbsp; <b>H</b> hat &nbsp; <b>M</b> music &nbsp; <b>ESC</b> pause
   </div>
 </div>
 
@@ -171,6 +197,7 @@
 <script src="js/player.js"></script>
 <script src="js/enemies.js"></script>
 <script src="js/boss.js"></script>
+<script src="js/map.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/main.js"></script>
 </body>

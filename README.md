@@ -22,6 +22,7 @@ capture the mouse; press **ESC** to release it / pause.
 | **Q** | 🫧 Bubble shield — blocks hits, *reflects* spores |
 | **E** | 🌀 Whirlpool spin — hits groups, flips shelled enemies |
 | **SHIFT** | 💨 Dash (brief invincibility — your dodge) |
+| **TAB** | 🗺️ World map (a minimap is always in the corner) |
 | **H** | Swap cosmetic hats & accessories |
 | **M** | Toggle music |
 
