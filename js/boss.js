@@ -4,93 +4,27 @@ G.makeBoss = function () {
   const ARENA = { x: 0, z: -200, r: 42 };
   const CORRUPT = 0xb03fe8;
 
-  // ---------------- Model ----------------
+  // ---------------- Model (Blender-authored, see blender/characters.py) ----------------
   const grp = new THREE.Group();
-  const bodyMat = U.emissiveMat(0x3a4458, 0x232b3f, 0.35);
-  const bellyMat = U.mat(0x8a94a8);
+  const model = G.assets.make('boss');
+  // facePlayerBoss() points the group's local -X at the player; the model's
+  // head is authored toward +X, so flip it around
+  const flip = new THREE.Group();
+  flip.rotation.y = Math.PI;
+  flip.add(model);
+  grp.add(flip);
 
-  const body = new THREE.Mesh(new THREE.CapsuleGeometry(1.9, 5.2, 8, 14), bodyMat);
-  body.rotation.z = Math.PI / 2;
-  body.castShadow = true;
-  grp.add(body);
-  const belly = new THREE.Mesh(new THREE.CapsuleGeometry(1.55, 4.6, 6, 10), bellyMat);
-  belly.rotation.z = Math.PI / 2;
-  belly.position.y = -0.75;
-  belly.scale.set(1, 0.7, 0.95);
-  grp.add(belly);
-
-  const headGrp = new THREE.Group();
-  const head = new THREE.Mesh(new THREE.SphereGeometry(2.15, 14, 12), bodyMat);
-  head.scale.set(1.15, 0.92, 1.15);
-  head.castShadow = true;
-  headGrp.add(head);
-  // wide mouth
-  const mouth = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.45, 2.9), U.mat(0x1a2030));
-  mouth.position.set(1.5, -0.7, 0);
-  headGrp.add(mouth);
-  // eyes — corrupted purple, become golden when cleansed
-  const eyeMats = [];
-  for (let s = -1; s <= 1; s += 2) {
-    const em = U.emissiveMat(0xd05fff, 0xb03fe8, 1);
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.42, 10, 9), em);
-    eye.position.set(1.15, 0.75, s * 1.35);
-    headGrp.add(eye);
-    eyeMats.push(em);
-  }
-  // whiskers (barbels) — 2 long + 2 short each side
-  const whiskers = [];
-  const whiskMat = U.emissiveMat(0x5a6478, 0x2a3448, 0.3);
-  for (let s = -1; s <= 1; s += 2) {
-    for (let i = 0; i < 2; i++) {
-      const w = new THREE.Mesh(new THREE.ConeGeometry(0.13 - i * 0.04, 4.6 - i * 1.6, 6), whiskMat);
-      w.position.set(1.9, -0.2 - i * 0.3, s * (0.8 + i * 0.5));
-      w.rotation.z = -1.35;
-      w.rotation.x = s * (0.5 + i * 0.4);
-      headGrp.add(w);
-      whiskers.push(w);
-    }
-  }
-  headGrp.position.set(4.1, 0.15, 0);
-  grp.add(headGrp);
-
-  // tail fin
-  const tailGrp = new THREE.Group();
-  const tf = new THREE.Mesh(new THREE.ConeGeometry(1.6, 3.4, 4), bodyMat);
-  tf.rotation.z = Math.PI / 2 + Math.PI;
-  tf.scale.set(1, 1, 0.3);
-  tf.position.x = -1.4;
-  tailGrp.add(tf);
-  tailGrp.position.x = -4.2;
-  grp.add(tailGrp);
-  // dorsal + side fins
-  const dorsal = new THREE.Mesh(new THREE.ConeGeometry(1.3, 2.4, 4), bodyMat);
-  dorsal.scale.z = 0.25;
-  dorsal.position.set(-0.4, 2.1, 0);
-  grp.add(dorsal);
-  for (let s = -1; s <= 1; s += 2) {
-    const fin = new THREE.Mesh(new THREE.ConeGeometry(0.9, 2.2, 4), bodyMat);
-    fin.scale.z = 0.25;
-    fin.position.set(1.6, -0.7, s * 1.9);
-    fin.rotation.x = s * 1.9;
-    grp.add(fin);
-  }
-
-  // corruption crystals on back — shatter as boss loses health
-  const crystals = [];
-  const crysMat = U.emissiveMat(0x8a2fb8, CORRUPT, 0.95, { transparent: true, opacity: 0.95 });
-  const crysPos = [[-2.6, 1.7, 0.4], [-1.2, 2.0, -0.6], [0.4, 2.2, 0.5], [1.8, 1.9, -0.4], [-0.2, 1.9, 1.1], [-1.8, 1.8, 0.9]];
-  for (const [cx, cy, cz] of crysPos) {
-    const c = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1.9, 5), crysMat.clone());
-    c.position.set(cx, cy, cz);
-    c.rotation.set(U.rand(-0.4, 0.4), U.rand(0, U.TAU), U.rand(-0.4, 0.4));
-    grp.add(c);
-    crystals.push(c);
-  }
-  // heart crystal — glows during stagger windows
-  const heartCrys = new THREE.Mesh(new THREE.OctahedronGeometry(0.85), U.emissiveMat(0xff3f9e, 0xff5fbe, 1, { transparent: true, opacity: 0.95 }));
-  heartCrys.position.set(2.2, 1.4, 0);
+  const headGrp = model.getObjectByName('head');
+  const mouth = model.getObjectByName('mouth');
+  const tailGrp = model.getObjectByName('tail');
+  const bodyMat = model.getObjectByName('body').material;
+  const eyeMats = [model.getObjectByName('eyeL').material];   // shared by both eyes
+  const whiskers = [0, 1, 2, 3].map(i => model.getObjectByName('whisker' + i));
+  whiskers.forEach(w => { w.userData.rz0 = w.rotation.z; });
+  const crystals = [0, 1, 2, 3, 4, 5].map(i => model.getObjectByName('crystal' + i));
+  crystals.forEach(c => { c.material = c.material.clone(); });  // independent pulse/cleanse
+  const heartCrys = model.getObjectByName('heart');
   heartCrys.visible = false;
-  grp.add(heartCrys);
 
   grp.position.set(ARENA.x, -2.5, ARENA.z - 18);
   grp.visible = false;
@@ -132,7 +66,7 @@ G.makeBoss = function () {
       if (!c) break;
       c.visible = false; visCount--;
       G.audio.play('crack');
-      U.v1.copy(c.position).applyMatrix4(grp.matrixWorld);
+      c.getWorldPosition(U.v1);
       G.fx.burst(U.v1, CORRUPT, 26, 8);
     }
     G.ui.bossBar(B.hp / B.maxHp);
@@ -169,7 +103,8 @@ G.makeBoss = function () {
       target.rotation.x = -Math.PI / 2;
       target.position.set(x, Math.max(G.world.heightAt(x, z) + 0.3, 0.1), z);
       G.scene.add(target);
-      const crys = new THREE.Mesh(new THREE.ConeGeometry(0.5, 2.2, 5), crysMat.clone());
+      const crys = G.assets.make('crystal_shard');
+      crys.scale.setScalar(0.75);
       crys.position.set(x, 26, z);
       crys.rotation.x = Math.PI;
       crys.visible = false;
@@ -222,7 +157,7 @@ G.makeBoss = function () {
       heartCrys.material.emissiveIntensity = 0.8 + Math.sin(G.time * 8) * 0.4;
       grp.position.y = U.damp(grp.position.y, -1.2, 2, dt);
       grp.rotation.z = U.damp(grp.rotation.z, 0.35, 3, dt);
-      if (Math.random() < dt * 8) G.fx.sparkle(U.v1.copy(heartCrys.position).applyMatrix4(grp.matrixWorld), 0xff5fbe, 3, 0.6);
+      if (Math.random() < dt * 8) G.fx.sparkle(heartCrys.getWorldPosition(U.v1), 0xff5fbe, 3, 0.6);
       if (stagger <= 0) {
         heartCrys.visible = false;
         grp.rotation.z = 0;
@@ -263,7 +198,7 @@ G.makeBoss = function () {
       grp.position.y = U.damp(grp.position.y, -0.6, 4, dt);
       mouth.scale.y = 1 + Math.min(t, 0.8) * 2.4;
       if (t > 0.35 && !B.roared) { G.audio.play('roar'); B.roared = true; }
-      if (Math.random() < dt * 16) G.fx.trailDot(U.v1.copy(headGrp.position).applyMatrix4(grp.matrixWorld), 0xd05fff, 0.8, 0.3);
+      if (Math.random() < dt * 16) G.fx.trailDot(headGrp.getWorldPosition(U.v1), 0xd05fff, 0.8, 0.3);
       if (t > (p === 3 ? 0.6 : 0.9)) {
         B.roared = false;
         mouth.scale.y = 1;
@@ -312,7 +247,7 @@ G.makeBoss = function () {
       facePlayerBoss(dt, 4);
       if (t < 0.9) {
         grp.position.y = U.damp(grp.position.y, 2.4, 5, dt);
-        whiskers.forEach(w => { w.rotation.z = U.damp(w.rotation.z, -2.2, 6, dt); });
+        whiskers.forEach(w => { w.rotation.z = U.damp(w.rotation.z, w.userData.rz0 - 0.85, 6, dt); });
       } else if (t < 1.0) {
         grp.position.y = -2.8;
         if (!B.slammed) {
@@ -322,7 +257,7 @@ G.makeBoss = function () {
         }
       } else if (t > 1.6) {
         B.slammed = false;
-        whiskers.forEach(w => { w.rotation.z = -1.35; });
+        whiskers.forEach(w => { w.rotation.z = w.userData.rz0; });
         state = 'circle'; t = 0; attackTimer = U.rand(2.4, 3.6);
       }
     } else if (state === 'shardRain') {
@@ -413,9 +348,10 @@ G.makeBoss = function () {
       m.emissive.lerpColors(new THREE.Color(0xb03fe8), new THREE.Color(0xffd85f), progress);
       m.color.lerpColors(new THREE.Color(0xd05fff), new THREE.Color(0xffe98a), progress);
     });
+    // body is vertex-colored: tint from white toward a soft living green
     bodyMat.emissive.lerpColors(new THREE.Color(0x232b3f), new THREE.Color(0x3f5a4a), progress);
-    bodyMat.color.lerpColors(new THREE.Color(0x3a4458), new THREE.Color(0x5a8a72), progress);
-    crystals.forEach(c => { if (c.visible) { c.material.opacity = 0.95 * (1 - progress); } });
+    bodyMat.color.lerpColors(new THREE.Color(0xffffff), new THREE.Color(0xa8e0c0), progress);
+    crystals.forEach(c => { if (c.visible) c.scale.setScalar(Math.max(0.001, 1 - progress)); });
     grp.rotation.z = 0;
   };
   B.bowPos = function () { return new THREE.Vector3(ARENA.x, -1, ARENA.z + 6); };
@@ -425,7 +361,7 @@ G.makeBoss = function () {
     for (const sh of shards) { G.scene.remove(sh.target); G.scene.remove(sh.crys); }
     shards.length = 0;
   };
-  B.headWorldPos = function () { return U.v1.copy(headGrp.position).applyMatrix4(grp.matrixWorld).clone(); };
+  B.headWorldPos = function () { return headGrp.getWorldPosition(U.v1).clone(); };
   B.ARENA = ARENA;
 
   return B;

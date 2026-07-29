@@ -4,15 +4,11 @@ G.pickupSys = (function () {
   const items = [];
   G.pickups = items;
 
-  let pearlGeo, pearlMat, heartGeo, heartMat, relicGeo, relicMat;
+  let pearlGeo, pearlMat;
 
   function initGeo() {
     pearlGeo = new THREE.SphereGeometry(0.32, 10, 8);
     pearlMat = U.emissiveMat(0xd8fbff, 0x7fe8ff, 1, { transparent: true, opacity: 0.95 });
-    heartGeo = new THREE.SphereGeometry(0.34, 8, 8);
-    heartMat = U.emissiveMat(0xff7a9e, 0xff3f7a, 0.9);
-    relicGeo = new THREE.OctahedronGeometry(0.55);
-    relicMat = U.emissiveMat(0xffd85f, 0xffb82f, 1);
   }
 
   function add(item) { items.push(item); G.scene.add(item.mesh); return item; }
@@ -31,46 +27,21 @@ G.pickupSys = (function () {
   };
 
   P.spawnHeart = function (pos) {
-    const grp = new THREE.Group();
-    const s1 = new THREE.Mesh(heartGeo, heartMat); s1.position.x = -0.17;
-    const s2 = new THREE.Mesh(heartGeo, heartMat); s2.position.x = 0.17;
-    const s3 = new THREE.Mesh(new THREE.ConeGeometry(0.44, 0.55, 4), heartMat);
-    s3.position.y = -0.4; s3.rotation.x = Math.PI; s3.rotation.y = Math.PI / 4;
-    grp.add(s1, s2, s3);
-    grp.scale.setScalar(0.8);
+    const grp = G.assets.make('heart_pickup', { cloneMats: false });
+    grp.scale.setScalar(1.1);
     grp.position.copy(pos);
     add({ kind: 'heart', mesh: grp, t: U.rand(0, 9), magnet: true });
   };
 
   P.spawnRelic = function (x, z, name) {
-    const m = new THREE.Mesh(relicGeo, relicMat);
-    m.position.set(x, Math.max(G.world.heightAt(x, z) + 1.1, 0.8), z);
+    const m = G.assets.make('relic', { cloneMats: false });
+    m.position.set(x, Math.max(G.world.heightAt(x, z) + 0.8, 0.5), z);
     add({ kind: 'relic', mesh: m, t: 0, name });
   };
 
   // Baby axolotl: tiny pink friend that waits, then follows the player when rescued
   P.spawnBaby = function (x, z, name) {
-    const grp = new THREE.Group();
-    const bodyMat = U.emissiveMat(0xffb3c8, 0xff7fa5, 0.25);
-    const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.22, 0.5, 4, 8), bodyMat);
-    body.rotation.z = Math.PI / 2;
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.26, 10, 8), bodyMat);
-    head.position.set(0.42, 0.02, 0);
-    const gillMat = U.emissiveMat(0xff5f8e, 0xff3f6e, 0.5);
-    for (let s = -1; s <= 1; s += 2) {
-      for (let i = 0; i < 3; i++) {
-        const g = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.28, 4), gillMat);
-        g.position.set(0.5 + i * -0.07, 0.14, s * (0.14 + i * 0.05));
-        g.rotation.z = 0.8; g.rotation.x = s * 0.7;
-        grp.add(g);
-      }
-    }
-    const eyeMat = U.mat(0x222233);
-    const e1 = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 6), eyeMat); e1.position.set(0.58, 0.1, 0.13);
-    const e2 = e1.clone(); e2.position.z = -0.13;
-    const tail = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.5, 5), bodyMat);
-    tail.rotation.z = Math.PI / 2; tail.position.x = -0.52;
-    grp.add(body, head, e1, e2, tail);
+    const grp = G.assets.make('axolotl_baby');
     const y = Math.max(G.world.heightAt(x, z) + 0.5, -1.2);
     grp.position.set(x, y, z);
     // little glow so they're findable
@@ -81,16 +52,8 @@ G.pickupSys = (function () {
 
   // Treasure chest with a cosmetic inside
   P.spawnChest = function (x, z, cosmetic, label) {
-    const grp = new THREE.Group();
-    const wood = U.mat(0x8a5a32);
-    const gold = U.emissiveMat(0xffd85f, 0xdd9f2f, 0.4);
-    const base = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.7, 0.8), wood);
-    base.position.y = 0.35;
-    const lid = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 1.2, 8, 1, false, 0, Math.PI), wood);
-    lid.rotation.z = Math.PI / 2; lid.position.y = 0.72;
-    const clasp = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.2, 0.1), gold);
-    clasp.position.set(0, 0.55, 0.42);
-    grp.add(base, lid, clasp);
+    const grp = G.assets.make('chest', { cloneMats: false });
+    const lid = grp.getObjectByName('lid');
     grp.position.set(x, G.world.heightAt(x, z) + 0.1, z);
     grp.rotation.y = U.rand(0, U.TAU);
     add({ kind: 'chest', mesh: grp, t: 0, cosmetic, label, opened: false, lid });
@@ -183,7 +146,7 @@ G.pickupSys = (function () {
           target.z -= Math.cos(G.player.yaw) * -back;
           target.y = Math.max(target.y - 0.3, G.world.heightAt(target.x, target.z) + 0.35);
           m.position.lerp(target, 1 - Math.exp(-3.2 * dt));
-          m.rotation.y = U.angleDamp(m.rotation.y, G.player.yaw + Math.PI / 2, 6, dt);
+          m.rotation.y = U.angleDamp(m.rotation.y, G.player.yaw - Math.PI / 2, 6, dt);
           m.position.y += Math.sin(it.t * 5 + it.followIdx) * 0.01;
         }
       } else if (it.kind === 'chest') {

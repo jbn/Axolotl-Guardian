@@ -3,80 +3,19 @@ G.makePlayer = function () {
   const P = {};
   const WATER_Y = 0;
 
-  // ---------------- Model ----------------
+  // ---------------- Model (Blender-authored, see blender/characters.py) ----------------
   const grp = new THREE.Group();
-  const bodyPink = U.emissiveMat(0xffa8bf, 0xff6f95, 0.22);
-  const bellyPink = U.emissiveMat(0xffd0dc, 0xff9fb5, 0.18);
-  const gillMat = U.emissiveMat(0xff5f8e, 0xff2f6e, 0.55);
+  const model = G.assets.make('axolotl');
+  grp.add(model);
 
-  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.42, 1.1, 6, 12), bodyPink);
-  body.rotation.z = Math.PI / 2;
-  body.castShadow = true;
-
-  const belly = new THREE.Mesh(new THREE.CapsuleGeometry(0.36, 1.0, 5, 10), bellyPink);
-  belly.rotation.z = Math.PI / 2;
-  belly.position.y = -0.14;
-  belly.scale.set(1, 0.8, 0.95);
-
-  const headGrp = new THREE.Group();
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.5, 14, 12), bodyPink);
-  head.scale.set(1.05, 0.9, 1);
-  head.castShadow = true;
-  headGrp.add(head);
-  // eyes with glint
-  const eyeMat = U.mat(0x2a2438);
-  const glintMat = U.emissiveMat(0xffffff, 0xffffff, 1);
-  for (let s = -1; s <= 1; s += 2) {
-    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 8), eyeMat);
-    eye.position.set(0.3, 0.13, s * 0.3);
-    const glint = new THREE.Mesh(new THREE.SphereGeometry(0.032, 6, 6), glintMat);
-    glint.position.set(0.38, 0.17, s * 0.32);
-    headGrp.add(eye, glint);
-  }
-  // smile
-  const smile = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.022, 6, 10, Math.PI * 0.8), U.mat(0xd06080));
-  smile.position.set(0.42, -0.05, 0);
-  smile.rotation.set(Math.PI / 2 + 0.5, 0, Math.PI + 0.35);
-  headGrp.add(smile);
-  // signature gills (3 fronds each side)
-  const gills = [];
-  for (let s = -1; s <= 1; s += 2) {
-    for (let i = 0; i < 3; i++) {
-      const g = new THREE.Mesh(new THREE.ConeGeometry(0.085, 0.55, 5), gillMat);
-      g.position.set(-0.05 - i * 0.13, 0.22 + i * 0.03, s * (0.3 + i * 0.07));
-      g.rotation.z = 0.9;
-      g.rotation.x = s * (0.65 + i * 0.2);
-      headGrp.add(g);
-      gills.push(g);
-    }
-  }
-  headGrp.position.set(0.85, 0.1, 0);
-
-  // tail: flattened waving fin
-  const tailGrp = new THREE.Group();
-  const tailFin = new THREE.Mesh(new THREE.ConeGeometry(0.34, 1.25, 4), bodyPink);
-  tailFin.rotation.z = Math.PI / 2 + Math.PI;
-  tailFin.scale.set(1, 1, 0.28);
-  tailFin.position.x = -0.6;
-  tailFin.castShadow = true;
-  const tailGlow = new THREE.Mesh(new THREE.ConeGeometry(0.4, 1.4, 4),
-    U.emissiveMat(0x7fd8ff, 0x4fc8ff, 0.8, { transparent: true, opacity: 0 }));
-  tailGlow.rotation.copy(tailFin.rotation);
-  tailGlow.scale.set(1.15, 1.15, 0.34);
-  tailGlow.position.x = -0.62;
-  tailGrp.add(tailFin, tailGlow);
-  tailGrp.position.x = -0.75;
-
-  // stubby legs
-  const legs = [];
-  for (const [lx, lz] of [[0.45, 0.36], [0.45, -0.36], [-0.42, 0.36], [-0.42, -0.36]]) {
-    const leg = new THREE.Mesh(new THREE.CapsuleGeometry(0.09, 0.24, 3, 6), bodyPink);
-    leg.position.set(lx, -0.38, lz);
-    grp.add(leg);
-    legs.push(leg);
-  }
-
-  grp.add(body, belly, headGrp, tailGrp);
+  const headGrp = model.getObjectByName('head');
+  const tailGrp = model.getObjectByName('tail');
+  const tailGlow = model.getObjectByName('tailGlow');
+  const gills = [0, 1, 2, 3, 4, 5].map(i => model.getObjectByName('gill' + i));
+  const legs = ['legFL', 'legFR', 'legBL', 'legBR'].map(n => model.getObjectByName(n));
+  // remember rest poses — animation is applied relative to them
+  gills.forEach(g => { g.userData.ry0 = g.rotation.y; });
+  legs.forEach(l => { l.userData.y0 = l.position.y; l.userData.rx0 = l.rotation.x; });
 
   // bubble shield mesh
   const shieldMesh = new THREE.Mesh(new THREE.SphereGeometry(1.5, 18, 14),
@@ -97,42 +36,21 @@ G.makePlayer = function () {
   whipArc.rotation.x = Math.PI / 2;
   grp.add(whipArc);
 
-  // cosmetics
+  // cosmetics (Blender-authored hats/accessories)
   const cosmetics = { none: null };
   function buildCosmetics() {
-    // lily pad hat
-    const lily = new THREE.Group();
-    const pad = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.4, 0.06, 14, 1, false, 0.4, 5.6), U.mat(0x3f9c50));
-    const fl = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.2, 6), U.emissiveMat(0xff9fce, 0xff5f9e, 0.4));
-    fl.position.y = 0.12;
-    lily.add(pad, fl);
-    lily.position.set(0, 0.5, 0);
+    const lily = G.assets.make('hat_lily');
+    lily.position.set(0, 0.45, 0);
     cosmetics.lilyhat = lily;
-    // snail shell
-    const shell = new THREE.Group();
-    const sp = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.14, 8, 14), U.mat(0xd8a05f));
-    sp.rotation.y = Math.PI / 2;
-    const spTip = new THREE.Mesh(new THREE.SphereGeometry(0.13, 8, 8), U.mat(0xc08a4a));
-    shell.add(sp, spTip);
-    shell.position.set(0, 0.52, 0);
-    shell.scale.setScalar(1.1);
+    const shell = G.assets.make('hat_shell');
+    shell.position.set(-0.08, 0.5, 0);
+    shell.scale.setScalar(1.15);
     cosmetics.shell = shell;
-    // sunset scarf
-    const scarf = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.13, 8, 16), U.mat(0xff8a3f));
-    scarf.rotation.z = Math.PI / 2 - 0.25;
-    scarf.position.set(-0.32, 0.05, 0);
+    const scarf = G.assets.make('hat_scarf');
+    scarf.position.set(-0.35, 0.0, 0);
+    scarf.rotation.z = -0.2;
     cosmetics.scarf = scarf;
-    // glow crown (challenge cave reward)
-    const crown = new THREE.Group();
-    for (let i = 0; i < 5; i++) {
-      const a = (i / 5) * U.TAU;
-      const spike = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.26, 5), U.emissiveMat(0xffe98a, 0xffd84f, 1));
-      spike.position.set(Math.cos(a) * 0.3, 0.1, Math.sin(a) * 0.3);
-      crown.add(spike);
-    }
-    const band = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.05, 6, 14), U.emissiveMat(0xffe98a, 0xffd84f, 0.8));
-    band.rotation.x = Math.PI / 2;
-    crown.add(band);
+    const crown = G.assets.make('hat_crown');
     crown.position.set(0, 0.5, 0);
     cosmetics.crown = crown;
   }
@@ -464,11 +382,11 @@ G.makePlayer = function () {
       // idle tail wave + gill sway
       tailGrp.rotation.y = Math.sin(G.time * (P.inWater && moving ? 10 : 3.4)) * (moving ? 0.55 : 0.25);
     }
-    gills.forEach((g, i) => { g.rotation.y = Math.sin(G.time * 2.6 + i) * 0.18; });
+    gills.forEach((g, i) => { g.rotation.y = g.userData.ry0 + Math.sin(G.time * 2.6 + i) * 0.18; });
     legs.forEach((l, i) => {
       const sw = (moving && P.onGround) ? Math.sin(G.time * 11 + i * Math.PI) * 0.18 : 0;
-      l.position.y = -0.38 + Math.abs(sw) * 0.4;
-      l.rotation.x = sw * 2;
+      l.position.y = l.userData.y0 + Math.abs(sw) * 0.4;
+      l.rotation.x = l.userData.rx0 + sw * 2;
     });
     // hurt blink
     grp.visible = P.invuln <= 0 || Math.floor(G.time * 14) % 2 === 0;

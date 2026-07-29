@@ -213,44 +213,26 @@ G.world = (function () {
   }
 
   function makeVegetation() {
-    // Reeds (thin cones)
-    const reedGeo = new THREE.ConeGeometry(0.09, 2.6, 5);
-    reedGeo.translate(0, 1.3, 0);
-    const reedMat = U.mat(0x4f9d43);
+    // Reeds (Blender asset, instanced)
+    const reedAsset = G.assets.geo('reed');
     const reeds = [];
-    scatterOnBank(700, -0.35, 1.6, (x, z, h) => {
-      const n = U.randInt(2, 5);
+    scatterOnBank(550, -0.35, 1.6, (x, z, h) => {
+      const n = U.randInt(2, 4);
       for (let i = 0; i < n; i++)
         reeds.push({ x: x + U.rand(-0.9, 0.9), y: h - 0.15, z: z + U.rand(-0.9, 0.9), ry: U.rand(0, U.TAU), rz: U.rand(-0.14, 0.14), s: U.rand(0.6, 1.3) });
     }, (x, z) => W.zoneAt(x, z) === 'temple' || W.zoneAt(x, z) === 'cavern');
-    instancedFromGeo([reedGeo], reedMat, reeds);
+    instancedFromGeo([reedAsset.geometry], reedAsset.material, reeds);
 
     // Cattails
-    const catStem = new THREE.CylinderGeometry(0.045, 0.05, 2.4, 5); catStem.translate(0, 1.2, 0);
-    const catTip = new THREE.CapsuleGeometry(0.12, 0.5, 3, 6); catTip.translate(0, 2.55, 0);
+    const catAsset = G.assets.geo('cattail');
     const cattails = [];
     scatterOnBank(160, -0.5, 0.9, (x, z, h) => cattails.push({ x, y: h - 0.1, z, ry: U.rand(0, U.TAU), rz: U.rand(-0.1, 0.1), s: U.rand(0.8, 1.35) }),
       (x, z) => W.zoneAt(x, z) === 'temple');
-    instancedFromGeo([catStem], U.mat(0x63a848), cattails);
-    instancedFromGeo([catTip], U.mat(0x7a4a26), cattails);
+    instancedFromGeo([catAsset.geometry], catAsset.material, cattails);
 
-    // Trees (marsh willows): trunk + 2-3 canopy blobs
-    const trunkGeo = new THREE.CylinderGeometry(0.35, 0.6, 5, 7); trunkGeo.translate(0, 2.5, 0);
-    const blobGeo = new THREE.IcosahedronGeometry(2.4, 1);
-    const trunkMat = U.mat(0x6b4a30), blobMat = U.mat(0x3f8f45);
-    const blobMat2 = U.mat(0x57a552);
+    // Trees (Blender marsh willows, two variants)
     scatterOnBank(46, 0.5, 3.2, (x, z, h) => {
-      const grp = new THREE.Group();
-      const tr = new THREE.Mesh(trunkGeo, trunkMat); tr.castShadow = true;
-      grp.add(tr);
-      const nBlobs = U.randInt(2, 3);
-      for (let i = 0; i < nBlobs; i++) {
-        const b = new THREE.Mesh(blobGeo, Math.random() < 0.5 ? blobMat : blobMat2);
-        b.position.set(U.rand(-1.2, 1.2), 4.6 + U.rand(0, 1.6), U.rand(-1.2, 1.2));
-        b.scale.setScalar(U.rand(0.7, 1.25));
-        b.castShadow = true;
-        grp.add(b);
-      }
+      const grp = G.assets.make(Math.random() < 0.55 ? 'tree' : 'tree2', { cloneMats: false });
       const s = U.rand(0.8, 1.6);
       grp.scale.setScalar(s);
       grp.position.set(x, h - 0.2, z);
@@ -259,36 +241,30 @@ G.world = (function () {
       addCollider(x, z, 0.75 * s);
     }, (x, z) => W.zoneAt(x, z) === 'temple' || W.zoneAt(x, z) === 'cavern' || Math.abs(x) < 12);
 
-    // Rocks
-    const rockGeo = new THREE.DodecahedronGeometry(1, 0);
-    const rockMat = U.mat(0x8d8f93);
+    // Rocks (mossy boulders, two variants)
     scatterOnBank(90, -2.5, 2.5, (x, z, h) => {
-      const r = new THREE.Mesh(rockGeo, rockMat);
+      const r = G.assets.make(Math.random() < 0.5 ? 'rock' : 'rock2', { cloneMats: false });
       const s = U.rand(0.5, 2.2);
       r.scale.set(s, s * U.rand(0.6, 1), s);
-      r.position.set(x, h + s * 0.2, z);
-      r.rotation.set(U.rand(0, 3), U.rand(0, 3), U.rand(0, 3));
-      r.castShadow = true;
+      r.position.set(x, h - s * 0.15, z);
+      r.rotation.y = U.rand(0, U.TAU);
       G.scene.add(r);
       if (s > 1.1) addCollider(x, z, s * 0.85);
     });
 
-    // Lily pads — small decorative + big jumpable in forest
-    const padGeo = new THREE.CylinderGeometry(1, 0.94, 0.09, 18, 1, false, 0.5, 5.7);
-    const padMat = U.mat(0x3f9c50);
-    const padMatBig = U.mat(0x2f8f5b);
-    const flowerGeo = new THREE.ConeGeometry(0.32, 0.42, 6);
-    const flowerMat = U.emissiveMat(0xff9fce, 0xff5f9e, 0.35);
+    // Lily pads — small decorative (instanced) + big jumpable platforms
+    const padAsset = G.assets.geo('lilypad');
     const smallPads = [];
     scatterOnBank(150, -5, -0.25, (x, z, h) => {
       smallPads.push({ x, y: 0.03, z, ry: U.rand(0, U.TAU), s: U.rand(0.5, 1.2) });
       if (Math.random() < 0.22) {
-        const f = new THREE.Mesh(flowerGeo, flowerMat);
-        f.position.set(x, 0.25, z);
+        const f = G.assets.make('lotus', { cloneMats: false });
+        f.position.set(x, 0.08, z);
+        f.rotation.y = U.rand(0, U.TAU);
         G.scene.add(f);
       }
     }, (x, z) => W.zoneAt(x, z) === 'temple');
-    instancedFromGeo([padGeo], padMat, smallPads);
+    instancedFromGeo([padAsset.geometry], padAsset.material, smallPads);
 
     // Giant pads (platforms) placed by hand through the forest + some in marsh
     const giantPads = [
@@ -298,30 +274,28 @@ G.world = (function () {
       [38, 30, 2.8], [-52, 40, 2.6],
     ];
     for (const [x, z, r] of giantPads) {
-      const p = new THREE.Mesh(padGeo, padMatBig);
-      p.scale.set(r, 1.6, r);
+      const p = G.assets.make('lilypad_big', { cloneMats: false });
+      p.scale.set(r, 1.2, r);
       p.position.set(x, 0.05, z);
       p.rotation.y = U.rand(0, U.TAU);
-      p.receiveShadow = true;
+      p.traverse(o => { if (o.isMesh) o.receiveShadow = true; });
       G.scene.add(p);
       W.lilyPads.push({ x, z, r: r * 0.92, y: 0.14, mesh: p, bob: U.rand(0, 6) });
       if (Math.random() < 0.5) {
-        const f = new THREE.Mesh(flowerGeo, flowerMat);
+        const f = G.assets.make('lotus', { cloneMats: false });
         f.scale.setScalar(1.8);
-        f.position.set(x + r * 0.5, 0.45, z + r * 0.3);
+        f.position.set(x + r * 0.5, 0.3, z + r * 0.3);
+        f.rotation.y = U.rand(0, U.TAU);
         G.scene.add(f);
       }
     }
 
     // Fallen logs (platforms)
-    const logGeo = new THREE.CylinderGeometry(0.65, 0.75, 7, 9);
-    const logMat = U.mat(0x7a5636);
     const logs = [[6, 108, 0.4], [-14, 96, -0.3], [30, -30, 0.2], [-38, -40, 0.9], [52, -60, 0.1]];
     for (const [x, z, ry] of logs) {
-      const l = new THREE.Mesh(logGeo, logMat);
-      l.rotation.z = Math.PI / 2; l.rotation.y = ry;
+      const l = G.assets.make('log', { cloneMats: false });
+      l.rotation.y = ry;
       l.position.set(x, 0.35, z);
-      l.castShadow = true;
       G.scene.add(l);
       W.lilyPads.push({ x, z, r: 3.2, y: 0.95, mesh: null, bob: 0, isLog: true, ry });
     }
@@ -329,19 +303,17 @@ G.world = (function () {
 
   // ---------------- Ruins, cavern, temple ----------------
   function column(x, z, h, broken, radius = 0.9) {
-    const grp = new THREE.Group();
-    const mat = U.mat(0x9aa89b);
-    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius * 1.12, h, 9), mat);
-    shaft.position.y = h / 2;
-    shaft.castShadow = true;
-    grp.add(shaft);
-    if (!broken) {
-      const cap = new THREE.Mesh(new THREE.BoxGeometry(radius * 2.7, 0.5, radius * 2.7), mat);
-      cap.position.y = h + 0.25; cap.castShadow = true;
-      grp.add(cap);
-    } else {
-      shaft.rotation.z = U.rand(-0.14, 0.14);
-    }
+    // Blender column: unit-height 'shaft' stretched to h, 'cap'/'base' scaled to radius
+    const grp = G.assets.make(broken ? 'column_broken' : 'column', { cloneMats: false });
+    const shaft = grp.getObjectByName('shaft');
+    shaft.scale.set(radius, h, radius);
+    if (broken) shaft.rotation.z = U.rand(-0.1, 0.1);
+    const cap = grp.getObjectByName('cap');
+    if (cap) { cap.position.y = h; cap.scale.setScalar(radius); }
+    const base = grp.getObjectByName('base');
+    if (base) base.scale.set(radius, 1, radius);
+    const rubble = grp.getObjectByName('rubble');
+    if (rubble) { rubble.scale.setScalar(radius); rubble.rotation.y = U.rand(0, U.TAU); }
     // sink base below the analytic height — the render mesh can sit lower on steep slopes
     const gh = W.heightAt(x, z) - 1.4;
     grp.position.set(x, gh, z);
@@ -369,41 +341,38 @@ G.world = (function () {
       G.scene.add(w);
       addCollider(x, z, 2.4);
     }
-    // arch gateway into ruins
+    // arch gateway into ruins: two carved columns + a lintel
     const arch = new THREE.Group();
-    const am = U.mat(0x9aa89b);
-    const p1 = new THREE.Mesh(new THREE.BoxGeometry(1.2, 7, 1.2), am); p1.position.set(-3.4, 3.5, 0);
-    const p2 = p1.clone(); p2.position.x = 3.4;
-    const top = new THREE.Mesh(new THREE.BoxGeometry(8.6, 1.2, 1.5), am); top.position.y = 7.2;
-    arch.add(p1, p2, top);
-    arch.position.set(34, W.heightAt(34, -68), -68);
+    for (const px of [-3.4, 3.4]) {
+      const col = G.assets.make('column', { cloneMats: false });
+      col.getObjectByName('shaft').scale.set(0.55, 6.6, 0.55);
+      col.getObjectByName('cap').position.y = 6.6;
+      col.getObjectByName('cap').scale.setScalar(0.55);
+      col.getObjectByName('base').scale.set(0.6, 1, 0.6);
+      col.position.x = px;
+      arch.add(col);
+    }
+    const top = G.assets.make('lintel', { cloneMats: false });
+    top.scale.set(9.2, 2.2, 2.6);
+    top.position.y = 7.15;
+    arch.add(top);
+    arch.position.set(34, W.heightAt(34, -68) - 0.6, -68);
     arch.rotation.y = 0.7;
-    arch.children.forEach(c => c.castShadow = true);
     G.scene.add(arch);
   }
 
   function makeCavern() {
     const zc = ZONES.cavern;
     // Crystal clusters — ambient teal + a few corrupted magenta
-    const cGeo = new THREE.ConeGeometry(0.5, 2.2, 5);
     for (let i = 0; i < 42; i++) {
       const a = U.rand(0, U.TAU), r = U.rand(4, zc.r * 0.95);
       const x = zc.x + Math.cos(a) * r, z = zc.z + Math.sin(a) * r;
       const corrupted = Math.random() < 0.25;
-      const mat = corrupted
-        ? U.emissiveMat(0x8a2fb8, 0xb03fe8, 1.25)
-        : U.emissiveMat(0x3fd8d4, 0x2fc8e8, 1.1);
-      const grp = new THREE.Group();
-      const n = U.randInt(2, 5);
-      for (let j = 0; j < n; j++) {
-        const c = new THREE.Mesh(cGeo, mat);
-        const s = U.rand(0.5, 2.6);
-        c.scale.set(s, s * U.rand(1, 2.2), s);
-        c.position.set(U.rand(-1.2, 1.2), 0, U.rand(-1.2, 1.2));
-        c.rotation.set(U.rand(-0.35, 0.35), U.rand(0, U.TAU), U.rand(-0.35, 0.35));
-        grp.add(c);
-      }
-      grp.position.set(x, W.heightAt(x, z), z);
+      const grp = G.assets.make(corrupted ? 'crystal_dark' : 'crystal', { cloneMats: false });
+      const s = U.rand(0.7, 1.9);
+      grp.scale.set(s, s * U.rand(0.9, 1.6), s);
+      grp.rotation.y = U.rand(0, U.TAU);
+      grp.position.set(x, W.heightAt(x, z) - 0.1, z);
       G.scene.add(grp);
       caveCrystals.push(grp);
       if (Math.random() < 0.4) addCollider(x, z, 1.2);
@@ -425,20 +394,14 @@ G.world = (function () {
     magenta.position.set(zc.x - 18, 4, zc.z + 12);
     G.scene.add(teal, magenta);
     // glow mushrooms
-    const shGeo = new THREE.SphereGeometry(0.45, 8, 6, 0, U.TAU, 0, 1.4);
-    const stGeo = new THREE.CylinderGeometry(0.09, 0.13, 0.5, 5);
-    const shMat = U.emissiveMat(0x6fe8ff, 0x3fd8ff, 0.9);
-    const stMat = U.mat(0xd8e8e8);
     for (let i = 0; i < 30; i++) {
       const a = U.rand(0, U.TAU), r = U.rand(3, zc.r);
       const x = zc.x + Math.cos(a) * r, z = zc.z + Math.sin(a) * r;
       const h = W.heightAt(x, z);
       if (h > 0.5) continue;
-      const grp = new THREE.Group();
-      const st = new THREE.Mesh(stGeo, stMat); st.position.y = 0.25;
-      const sh = new THREE.Mesh(shGeo, shMat); sh.position.y = 0.5;
-      grp.add(st, sh);
-      grp.scale.setScalar(U.rand(0.6, 1.8));
+      const grp = G.assets.make('mushroom', { cloneMats: false });
+      grp.scale.setScalar(U.rand(0.7, 2.0));
+      grp.rotation.y = U.rand(0, U.TAU);
       grp.position.set(x, h, z);
       G.scene.add(grp);
     }
@@ -468,36 +431,44 @@ G.world = (function () {
       W.templePillars.push({ x, z, mesh: col, alive: true });
     }
     // grand entry arch + steps at (0,-160)
-    const am = U.emissiveMat(0x8f9e93, 0x2f4f4a, 0.2);
     const grand = new THREE.Group();
-    const gp1 = new THREE.Mesh(new THREE.BoxGeometry(2, 11, 2), am); gp1.position.set(-5.5, 5.5, 0);
-    const gp2 = gp1.clone(); gp2.position.x = 5.5;
-    const gtop = new THREE.Mesh(new THREE.BoxGeometry(14.5, 2, 2.6), am); gtop.position.y = 11.6;
+    for (const px of [-5.5, 5.5]) {
+      const col = G.assets.make('column', { cloneMats: false });
+      col.getObjectByName('shaft').scale.set(0.95, 10.6, 0.95);
+      col.getObjectByName('cap').position.y = 10.6;
+      col.getObjectByName('cap').scale.setScalar(0.95);
+      col.position.x = px;
+      grand.add(col);
+    }
+    const gtop = G.assets.make('lintel', { cloneMats: false });
+    gtop.scale.set(15.5, 3.6, 3.2);
+    gtop.position.y = 11.35;
+    grand.add(gtop);
     const gem = new THREE.Mesh(new THREE.OctahedronGeometry(1.1), U.emissiveMat(0xb03fe8, 0xd05fff, 1));
-    gem.position.y = 13.6;
-    grand.add(gp1, gp2, gtop, gem);
+    gem.position.y = 14.4;
+    grand.add(gem);
     grand.position.set(0, W.heightAt(0, -158) - 1.2, -158);
-    grand.children.forEach(c => c.castShadow = true);
     G.scene.add(grand);
     W.templeGem = gem;
     addCollider(-5.5, -158, 1.4); addCollider(5.5, -158, 1.4);
     // altar in center (boss cleansing point)
-    const altar = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 4, 1.2, 10), am);
-    altar.position.set(zc.x, W.heightAt(zc.x, zc.z) + 0.6, zc.z);
-    altar.receiveShadow = true;
+    const altar = G.assets.make('altar', { cloneMats: false });
+    altar.scale.set(3.5, 1.35, 3.5);
+    altar.position.set(zc.x, W.heightAt(zc.x, zc.z) - 0.1, zc.z);
+    altar.traverse(o => { if (o.isMesh) o.receiveShadow = true; });
     G.scene.add(altar);
     // corrupted crystals around arena
-    const cGeo = new THREE.ConeGeometry(0.7, 3, 5);
-    const cMat = U.emissiveMat(0x7a1fa8, 0xb03fe8, 0.9, { transparent: true, opacity: 0.95 });
+    const shardAsset = G.assets.geo('crystal_shard');
     W.templeCrystals = [];
     for (let i = 0; i < 10; i++) {
       const a = U.rand(0, U.TAU), r = U.rand(10, zc.r * 0.9);
       const x = zc.x + Math.cos(a) * r, z = zc.z + Math.sin(a) * r;
-      const c = new THREE.Mesh(cGeo, cMat.clone());
-      const s = U.rand(1, 2.6);
-      c.scale.set(s, s * U.rand(1.4, 2.4), s);
-      c.position.set(x, W.heightAt(x, z), z);
+      const c = new THREE.Mesh(shardAsset.geometry, shardAsset.material.clone());
+      const s = U.rand(0.9, 2.2);
+      c.scale.set(s, s * U.rand(1.1, 1.9), s);
+      c.position.set(x, W.heightAt(x, z) - 0.2, z);
       c.rotation.y = U.rand(0, U.TAU);
+      c.castShadow = true;
       G.scene.add(c);
       W.templeCrystals.push(c);
     }
@@ -507,9 +478,11 @@ G.world = (function () {
   // ---------------- Gates ----------------
   function makeGate(x, z, ry, need, name, ability, desc) {
     const grp = new THREE.Group();
-    const postMat = U.emissiveMat(0x6f8f5f, 0x3f6f2f, 0.25);
-    const p1 = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.9, 8, 8), postMat); p1.position.set(-6, 4, 0);
-    const p2 = p1.clone(); p2.position.x = 6;
+    const p1 = G.assets.make('gatepost', { cloneMats: false });
+    p1.position.set(-6, 0, 0);
+    const p2 = G.assets.make('gatepost', { cloneMats: false });
+    p2.position.set(6, 0, 0);
+    p2.rotation.y = Math.PI * 0.7;
     const orb1 = new THREE.Mesh(new THREE.SphereGeometry(0.75, 12, 10), U.emissiveMat(0x7fe8ff, 0x4fd8ff, 1));
     orb1.position.set(-6, 8.4, 0);
     const orb2 = orb1.clone(); orb2.position.x = 6;
@@ -549,8 +522,7 @@ G.world = (function () {
   // Ability shrines (visual pedestal where unlocks happen)
   function makeShrine(x, z, color) {
     const grp = new THREE.Group();
-    const base = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 2, 0.8, 9), U.mat(0x9aa89b));
-    base.position.y = 0.4;
+    const base = G.assets.make('shrine', { cloneMats: false });
     const orb = new THREE.Mesh(new THREE.SphereGeometry(0.55, 12, 10), U.emissiveMat(color, color, 1, { transparent: true, opacity: 0.95 }));
     orb.position.y = 1.7;
     grp.add(base, orb);
@@ -652,11 +624,11 @@ G.world = (function () {
     W.whirlShrine = makeShrine(14, -6, 0xffd85f); // whirlpool unlock spot (forest event)
 
     // challenge cave marker (glowing ring of stones east marsh)
-    const ccMat = U.emissiveMat(0xffb84f, 0xff9f2f, 0.8);
     for (let i = 0; i < 7; i++) {
       const a = (i / 7) * U.TAU;
-      const s = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1.8, 5), ccMat);
-      s.position.set(88 + Math.cos(a) * 10, W.heightAt(88 + Math.cos(a) * 10, 172 + Math.sin(a) * 10) + 0.6, 172 + Math.sin(a) * 10);
+      const s = G.assets.make('stone_marker', { cloneMats: false });
+      s.rotation.y = U.rand(0, U.TAU);
+      s.position.set(88 + Math.cos(a) * 10, W.heightAt(88 + Math.cos(a) * 10, 172 + Math.sin(a) * 10) - 0.2, 172 + Math.sin(a) * 10);
       G.scene.add(s);
     }
   };

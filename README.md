@@ -52,7 +52,14 @@ Every enemy telegraphs its attacks — watch, then counter:
 ## Tech
 
 Plain JavaScript + [Three.js](https://threejs.org) (vendored in `vendor/`), procedural
-WebAudio sound & generative music — zero external assets, zero dependencies, ~120 FPS.
+WebAudio sound & generative music — zero dependencies, no server needed, ~120 FPS.
+
+All 39 models (player, enemies, boss, vegetation, architecture, pickups, hats) are
+authored in **Blender** by the scripts in `blender/`, exported as GLB with vertex
+colors, and embedded as base64 in `js/assets-data.js` so the game still runs from a
+double-clicked `index.html` — no fetches, no CORS. A tiny custom GLB parser
+(`js/assets.js`) instantiates them as named node hierarchies that the gameplay code
+animates directly (gills, claws, whiskers, jaws...).
 
 | File | What it does |
 |---|---|
@@ -61,5 +68,17 @@ WebAudio sound & generative music — zero external assets, zero dependencies, ~
 | `js/enemies.js` | The seven enemy AIs with telegraphs & weaknesses |
 | `js/boss.js` | Crystal Catfish King — 3 phases, hazards, cleansing finale |
 | `js/pickups.js` | Pearls, hearts, babies, relics, cosmetic chests |
+| `js/assets.js` / `js/assets-data.js` | Embedded-GLB parser / generated asset data |
 | `js/fx.js` / `js/audio.js` | Particle systems / procedural SFX & music |
 | `js/ui.js` / `js/main.js` | HUD & screens / game loop, progression, cinematics |
+
+### Rebuilding the art (optional — needs Blender 4.2+)
+
+```
+blender --background --python blender/build.py -- all --pack        # everything
+blender --background --python blender/build.py -- axolotl --preview # one asset + render
+```
+
+`blender/lib.py` is the toolkit (blob "clay" modeling via voxel remesh, vertex
+painting, GLB export, Cycles preview renders); `blender/characters.py` and
+`blender/props.py` define each asset. `--pack` regenerates `js/assets-data.js`.

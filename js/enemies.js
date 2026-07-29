@@ -74,41 +74,17 @@
   function makeCrab(x, z) {
     const e = baseEnemy('crab', x, z, 1.1, 4);
     e.pearls = 2;
-    const bodyMat = U.emissiveMat(0xe8734a, 0x992f11, 0.15);
-    const body = new THREE.Mesh(new THREE.SphereGeometry(0.75, 12, 9), bodyMat);
-    body.scale.set(1.25, 0.7, 1);
-    body.castShadow = true;
-    e.grp.add(body);
-    // crystal shell (armor)
-    const shellGrp = new THREE.Group();
-    const cMat = U.emissiveMat(0x8a2fb8, CORRUPT, 0.7, { transparent: true, opacity: 0.95 });
-    for (let i = 0; i < 5; i++) {
-      const c = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.8, 5), cMat);
-      c.position.set(U.rand(-0.5, 0.5), 0.55, U.rand(-0.4, 0.4));
-      c.rotation.set(U.rand(-0.4, 0.4), 0, U.rand(-0.4, 0.4));
-      shellGrp.add(c);
-    }
-    e.grp.add(shellGrp);
-    e.shellGrp = shellGrp; e.shellHp = 2;
-    // claws
-    const clawMat = U.mat(0xd85f3a);
-    const claws = [];
-    for (let s = -1; s <= 1; s += 2) {
-      const claw = new THREE.Mesh(new THREE.SphereGeometry(0.34, 8, 7), clawMat);
-      claw.scale.set(1.3, 0.8, 0.9);
-      claw.position.set(0.75, -0.05, s * 0.62);
-      e.grp.add(claw);
-      claws.push(claw);
-    }
+    // Blender model faces +X; gameplay forward is +Z — wrap to align
+    const model = G.assets.make('crab');
+    const wrap = new THREE.Group();
+    wrap.rotation.y = -Math.PI / 2;
+    wrap.add(model);
+    e.grp.add(wrap);
+    e.shellGrp = model.getObjectByName('shell');
+    e.shellHp = 2;
+    const claws = [model.getObjectByName('clawL'), model.getObjectByName('clawR')];
+    claws.forEach(c => { c.userData.y0 = c.position.y; });
     e.claws = claws;
-    // eyes on stalks
-    for (let s = -1; s <= 1; s += 2) {
-      const st = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.4, 5), clawMat);
-      st.position.set(0.55, 0.5, s * 0.22);
-      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.1, 7, 7), U.emissiveMat(0xffffff, 0xd05fff, 0.8));
-      eye.position.set(0.55, 0.72, s * 0.22);
-      e.grp.add(st, eye);
-    }
     collectMats(e);
 
     e.hit = function (dmg, kind, fromPos) {
@@ -118,7 +94,7 @@
         G.fx.burst(U.v1.copy(e.pos).add(U.v2.set(0, 0.6, 0)), CORRUPT, 10, 4);
         flashHit(e);
         if (e.shellHp <= 0) {
-          e.grp.remove(e.shellGrp);
+          e.shellGrp.removeFromParent();
           G.fx.burst(e.pos, CORRUPT, 22, 7);
           G.audio.play('crack');
         }
@@ -129,7 +105,7 @@
       flashHit(e);
       G.audio.play('enemyHurt');
       knockback(e, fromPos, 5);
-      if (kind === 'whirl') { e.stun = 2.4; if (e.shellHp > 0) { e.shellHp = 0; e.grp.remove(e.shellGrp); G.audio.play('crack'); } }
+      if (kind === 'whirl') { e.stun = 2.4; if (e.shellHp > 0) { e.shellHp = 0; e.shellGrp.removeFromParent(); G.audio.play('crack'); } }
       if (e.hp <= 0) die(e);
     };
 
@@ -161,7 +137,7 @@
       } else if (e.state === 'windup') {
         // telegraph: claws raise + shake
         facePlayer(e, dt, 8);
-        e.claws.forEach(c => { c.position.y = -0.05 + Math.min(e.t * 1.6, 0.55) + Math.sin(e.t * 30) * 0.04; });
+        e.claws.forEach(c => { c.position.y = c.userData.y0 + Math.min(e.t * 1.6, 0.55) + Math.sin(e.t * 30) * 0.04; });
         if (e.t > 0.55) { e.state = 'lunge'; e.t = 0; G.audio.play('dash'); }
       } else if (e.state === 'lunge') {
         if (e.t < 0.08) {
@@ -169,7 +145,7 @@
           e.vel.copy(U.v1).multiplyScalar(15);
         }
         tryTouchDamage(e, dt, 1.9, 1);
-        if (e.t > 0.4) { e.state = 'strafe'; e.t = 0; e.attackCd = U.rand(1.6, 2.8); e.claws.forEach(c => c.position.y = -0.05); }
+        if (e.t > 0.4) { e.state = 'strafe'; e.t = 0; e.attackCd = U.rand(1.6, 2.8); e.claws.forEach(c => c.position.y = c.userData.y0); }
       }
       moveWithCollision(e, dt);
     };
@@ -181,27 +157,12 @@
     const e = baseEnemy('vine', x, z, 1.0, 3);
     e.pearls = 1;
     e.waterY = G.world.heightAt(x, z) + 0.2;
-    const stalkMat = U.emissiveMat(0x3f7a2f, 0x1f4f1f, 0.2);
-    const thornMat = U.mat(0x8a5a3a);
-    const segs = [];
-    for (let i = 0; i < 5; i++) {
-      const s = new THREE.Mesh(new THREE.CylinderGeometry(0.16 - i * 0.02, 0.19 - i * 0.02, 0.7, 6), stalkMat);
-      s.position.y = 0.35 + i * 0.62;
-      e.grp.add(s);
-      segs.push(s);
-      for (let j = 0; j < 3; j++) {
-        const th = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.28, 4), thornMat);
-        const a = U.rand(0, U.TAU);
-        th.position.set(Math.cos(a) * 0.18, 0.35 + i * 0.62, Math.sin(a) * 0.18);
-        th.rotation.z = -Math.cos(a) * 1.4;
-        th.rotation.x = Math.sin(a) * 1.4;
-        e.grp.add(th);
-      }
-    }
-    const bud = new THREE.Mesh(new THREE.SphereGeometry(0.42, 9, 8), U.emissiveMat(0xc82f8a, 0xff3fae, 0.6));
-    bud.position.y = 3.4;
-    bud.scale.y = 1.25;
-    e.grp.add(bud);
+    const model = G.assets.make('vine');
+    e.grp.add(model);
+    const segs = [0, 1, 2, 3, 4].map(i => model.getObjectByName('seg' + i));
+    const bud = model.getObjectByName('bud');
+    segs.forEach(s => { s.userData.x0 = s.position.x; });
+    bud.userData.x0 = bud.position.x;
     e.segs = segs; e.bud = bud;
     e.grp.scale.y = 0.12; // starts coiled underwater
     collectMats(e);
@@ -227,8 +188,8 @@
         e.grp.rotation.y += Math.sin(e.t * 40) * 0.05;
         if (e.t > 0.7) { e.state = 'active'; e.t = 0; }
       } else if (e.state === 'active') {
-        segs.forEach((s, i) => { s.position.x = Math.sin(e.t * 2.2 + i * 0.8) * 0.14 * i; });
-        bud.position.x = Math.sin(e.t * 2.2 + 4) * 0.6;
+        segs.forEach((s, i) => { s.position.x = s.userData.x0 + Math.sin(e.t * 2.2 + i * 0.8) * 0.14 * i; });
+        bud.position.x = bud.userData.x0 + Math.sin(e.t * 2.2 + 4) * 0.6;
         facePlayer(e, dt, 3);
         e.attackCd -= dt;
         if (d < 4.6 && e.attackCd <= 0) { e.state = 'windup'; e.t = 0; }
@@ -257,31 +218,16 @@
   function makeFrog(x, z) {
     const e = baseEnemy('frog', x, z, 0.9, 3);
     e.pearls = 2;
-    const bodyMat = U.emissiveMat(0x5f3a8a, 0x3a1f66, 0.5);
-    const body = new THREE.Mesh(new THREE.SphereGeometry(0.62, 12, 10), bodyMat);
-    body.scale.set(1, 0.82, 1.1);
-    body.castShadow = true;
-    e.grp.add(body);
-    e.body = body;
-    for (let s = -1; s <= 1; s += 2) {
-      const leg = new THREE.Mesh(new THREE.SphereGeometry(0.26, 7, 6), bodyMat);
-      leg.position.set(s * 0.55, -0.25, -0.3);
-      leg.scale.set(0.8, 0.6, 1.3);
-      e.grp.add(leg);
-      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 7), U.emissiveMat(0xffdf5f, 0xffbf2f, 1));
-      eye.position.set(s * 0.3, 0.42, 0.4);
-      e.grp.add(eye);
-      const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.07, 6, 6), U.mat(0x1a0a2a));
-      pupil.position.set(s * 0.3, 0.44, 0.53);
-      e.grp.add(pupil);
-    }
+    const model = G.assets.make('frog');
+    e.grp.add(model);
+    e.body = model.getObjectByName('body');   // eyes ride along when it puffs up
     collectMats(e);
     e.hopT = U.rand(0, 1.4);
 
     e.hit = function (dmg, kind, fromPos) {
       const mult = e.state === 'inflate' ? 2 : 1;   // hit while inflated = big damage + stun
       e.hp -= dmg * mult;
-      if (e.state === 'inflate') { e.stun = 1.6; e.state = 'hop'; e.body.scale.set(1, 0.82, 1.1); }
+      if (e.state === 'inflate') { e.stun = 1.6; e.state = 'hop'; e.body.scale.set(1, 1, 1); }
       flashHit(e);
       G.audio.play('enemyHurt');
       knockback(e, fromPos, 6);
@@ -316,10 +262,10 @@
         // telegraph: puffing up
         facePlayer(e, dt, 6);
         const p = Math.min(e.t / 0.75, 1);
-        e.body.scale.set(1 + p * 0.5, 0.82 + p * 0.55, 1.1 + p * 0.4);
+        e.body.scale.set(1 + p * 0.5, 1 + p * 0.67, 1 + p * 0.36);
         if (e.t > 0.75) {
           e.state = 'hop'; e.attackCd = U.rand(2.2, 3.6);
-          e.body.scale.set(1, 0.82, 1.1);
+          e.body.scale.set(1, 1, 1);
           // lob spore at player
           const m = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 7), U.emissiveMat(0xb03fe8, 0xd05fff, 0.9));
           m.position.copy(e.pos).setY(e.pos.y + 0.6);
@@ -352,11 +298,11 @@
     const e = baseEnemy('swarm', x, z, 1.6, 3);
     e.pearls = 2;
     e.waterY = 0.8;
-    const bugGeo = new THREE.OctahedronGeometry(0.13);
-    const bugMat = new THREE.MeshBasicMaterial({ color: 0xdfff5f }); // unlit — always glows
+    const proto = G.assets.make('bug');   // clones share this swarm's materials (for hit flash)
     e.bugs = [];
     for (let i = 0; i < 13; i++) {
-      const b = new THREE.Mesh(bugGeo, bugMat);
+      const b = i === 0 ? proto : proto.clone(true);
+      b.scale.setScalar(0.85);
       b.userData = { a: U.rand(0, U.TAU), r: U.rand(0.4, 1.6), sp: U.rand(2, 5), ph: U.rand(0, 9) };
       e.grp.add(b);
       e.bugs.push(b);
@@ -383,6 +329,7 @@
         const u = b.userData;
         u.a += u.sp * dt;
         b.position.set(Math.cos(u.a) * u.r, Math.sin(e.t * 3 + u.ph) * 0.5, Math.sin(u.a) * u.r);
+        b.rotation.y = -u.a;   // face along the orbit
       }
       const d = playerDist(e);
       if (d < 20) {
@@ -406,39 +353,18 @@
   function makeTurtle(x, z) {
     const e = baseEnemy('turtle', x, z, 1.5, 6);
     e.pearls = 3;
-    const shellMat = U.emissiveMat(0x2f5e3f, 0x0f2f1f, 0.2);
-    const shell = new THREE.Mesh(new THREE.SphereGeometry(1.1, 12, 9), shellMat);
-    shell.scale.set(1.25, 0.62, 1.1);
-    shell.castShadow = true;
-    e.grp.add(shell);
-    // crystal armor spikes on shell
-    const cMat = U.emissiveMat(0x8a2fb8, CORRUPT, 0.75, { transparent: true, opacity: 0.95 });
-    for (let i = 0; i < 6; i++) {
-      const c = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.7, 5), cMat);
-      const a = (i / 6) * U.TAU;
-      c.position.set(Math.cos(a) * 0.55, 0.62, Math.sin(a) * 0.55);
-      c.rotation.set(Math.sin(a) * 0.5, 0, -Math.cos(a) * 0.5);
-      e.grp.add(c);
-    }
-    const skinMat = U.mat(0x5a8a4f);
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.42, 10, 8), skinMat);
-    head.position.set(1.35, -0.05, 0);
-    e.grp.add(head);
-    const jaw = new THREE.Mesh(new THREE.ConeGeometry(0.3, 0.5, 4), U.emissiveMat(0xffdf9f, 0xff8f2f, 0));
-    jaw.rotation.z = -Math.PI / 2;
-    jaw.position.set(1.75, -0.08, 0);
-    e.grp.add(jaw);
+    // Blender model faces +X; gameplay forward (armor check, charge) is +Z
+    const model = G.assets.make('turtle');
+    const wrap = new THREE.Group();
+    wrap.rotation.y = -Math.PI / 2;
+    wrap.add(model);
+    e.grp.add(wrap);
+    const head = model.getObjectByName('head');
+    head.userData.x0 = head.position.x;
+    const jaw = model.getObjectByName('jaw');
+    jaw.material.emissive.set(0xff8f2f);      // glTF can't store "glow color at zero intensity"
+    jaw.material.emissiveIntensity = 0;
     e.jaw = jaw; e.head = head;
-    const tail = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.6, 5), skinMat);
-    tail.rotation.z = Math.PI / 2;
-    tail.position.set(-1.4, -0.1, 0);
-    e.grp.add(tail);
-    for (const [fx2, fz] of [[0.7, 0.85], [0.7, -0.85], [-0.7, 0.85], [-0.7, -0.85]]) {
-      const fin = new THREE.Mesh(new THREE.SphereGeometry(0.3, 7, 6), skinMat);
-      fin.position.set(fx2, -0.35, fz);
-      fin.scale.set(1.4, 0.4, 0.8);
-      e.grp.add(fin);
-    }
     collectMats(e);
 
     e.hit = function (dmg, kind, fromPos) {
@@ -492,7 +418,7 @@
         facePlayer(e, dt, 3.5);
         e.jaw.material.emissiveIntensity = Math.min(e.t * 1.6, 1);
         e.jaw.scale.setScalar(1 + Math.min(e.t, 0.8) * 0.5);
-        e.head.position.x = 1.35 - Math.min(e.t * 0.3, 0.25);
+        e.head.position.x = e.head.userData.x0 - Math.min(e.t * 0.3, 0.25);
         if (e.t > 0.85) {
           e.state = 'charge'; e.t = 0;
           G.audio.play('roar');
@@ -506,7 +432,7 @@
           e.state = 'tired'; e.t = 0;
           e.jaw.material.emissiveIntensity = 0;
           e.jaw.scale.setScalar(1);
-          e.head.position.x = 1.35;
+          e.head.position.x = e.head.userData.x0;
         }
       } else if (e.state === 'tired') {
         // vulnerable window — pants
@@ -524,27 +450,18 @@
     e.pearls = 4;
     e.waterY = -1.2;
     e.path = path; e.pathIdx = 0;
-    const headMat = U.emissiveMat(0x3a4a8a, 0x1f2f6f, 0.4);
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.62, 11, 9), headMat);
-    head.scale.set(1.3, 0.9, 0.9);
-    e.grp.add(head);
-    for (let s = -1; s <= 1; s += 2) {
-      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.12, 7, 7), U.emissiveMat(0xffe95f, 0xffcf2f, 1));
-      eye.position.set(0.4, 0.2, s * 0.3);
-      e.grp.add(eye);
-    }
-    // trailing segments (independent meshes that follow)
+    // Blender head faces +X; movement heading is +Z
+    const model = G.assets.make('eel_head');
+    const wrap = new THREE.Group();
+    wrap.rotation.y = -Math.PI / 2;
+    wrap.add(model);
+    e.grp.add(wrap);
+    // trailing segments (independent groups that follow)
     e.segs = [];
-    const segMat = U.emissiveMat(0x4a5a9e, 0x2f3f7f, 0.35);
-    const finMat = U.emissiveMat(0x7fd8ff, 0x4fc8ff, 0.5);
+    const segProto = G.assets.make('eel_seg', { cloneMats: false });
     for (let i = 0; i < 7; i++) {
-      const sg = new THREE.Group();
-      const s = new THREE.Mesh(new THREE.SphereGeometry(0.5 - i * 0.05, 9, 7), segMat);
-      s.scale.set(1.25, 0.85, 0.85);
-      sg.add(s);
-      const fin = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.5, 4), finMat);
-      fin.position.y = 0.45 - i * 0.04;
-      sg.add(fin);
+      const sg = i === 0 ? segProto : segProto.clone(true);
+      sg.scale.setScalar(1 - i * 0.09);
       sg.position.copy(e.pos);
       G.scene.add(sg);
       e.segs.push(sg);
@@ -621,27 +538,9 @@
   function makeGoblin(x, z) {
     const e = baseEnemy('goblin', x, z, 0.8, 3);
     e.pearls = 2; e.stolen = 0;
-    const mudMat = U.emissiveMat(0x6b4f2f, 0x3a2a12, 0.2);
-    const body = new THREE.Mesh(new THREE.SphereGeometry(0.55, 10, 8), mudMat);
-    body.scale.set(1, 1.15, 1);
-    body.castShadow = true;
-    e.grp.add(body);
-    for (let s = -1; s <= 1; s += 2) {
-      const ear = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.55, 5), mudMat);
-      ear.position.set(s * 0.32, 0.62, 0);
-      ear.rotation.z = -s * 0.7;
-      e.grp.add(ear);
-      const eye = new THREE.Mesh(new THREE.SphereGeometry(0.13, 8, 7), U.emissiveMat(0xffffff, 0xffdf7f, 0.9));
-      eye.position.set(s * 0.22, 0.28, 0.42);
-      e.grp.add(eye);
-      const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.06, 6, 6), U.mat(0x221408));
-      pupil.position.set(s * 0.22, 0.28, 0.53);
-      e.grp.add(pupil);
-    }
-    const sack = new THREE.Mesh(new THREE.SphereGeometry(0.35, 8, 7), U.mat(0x9a8a5f));
-    sack.position.set(-0.5, 0.15, -0.15);
-    e.grp.add(sack);
-    e.sack = sack;
+    const model = G.assets.make('goblin');
+    e.grp.add(model);
+    e.sack = model.getObjectByName('sack');
     collectMats(e);
 
     e.hit = function (dmg, kind, fromPos) {
