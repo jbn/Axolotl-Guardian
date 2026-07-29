@@ -67,6 +67,8 @@ def main():
         spec = ASSETS[n]
         fn, opts = (spec if isinstance(spec, tuple) else (spec, {}))
         roots = fn()
+        if '--no-ao' not in flags:
+            lib.bake_ao(roots)
         glb = lib.export_glb(os.path.join(GLB_DIR, n + '.glb'), roots)
         size = os.path.getsize(glb)
         print('BUILT %s (%d KB)' % (n, size // 1024))

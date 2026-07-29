@@ -459,9 +459,9 @@
         G.camera.position.set(Math.cos(a) * 30, 9, 175 + Math.sin(a) * 24);
         G.camera.lookAt(0, 0, 150);
         G.fx.update(dt);
-        G.renderer.render(G.scene, G.camera);
+        G.post.render();
       } else {
-        G.renderer.render(G.scene, G.camera);
+        G.post.render();
       }
       return;
     }
@@ -488,12 +488,13 @@
     if (frogsAlive < frogsAliveLast) frogsKilled += frogsAliveLast - frogsAlive;
     frogsAliveLast = frogsAlive;
 
-    G.renderer.render(G.scene, G.camera);
+    G.post.render();
   }
 
   // ---------------- Boot ----------------
   function boot() {
     initRenderer();
+    G.post.init();
     G.state = freshState();
     G.fx.init();
     G.world.build();

@@ -10,6 +10,8 @@ G.world = (function () {
   let rainPts, rainOn = false, rainVel = [];
   let caveCrystals = [], godRays = [], shrines = [];
   let terrainMesh;
+  let sunSprite, moonSprite, stars, starsBright, clouds = [], cloudMat;
+  const _dir = new THREE.Vector3();
 
   // ---------------- Zone layout ----------------
   const ZONES = {
@@ -109,45 +111,96 @@ G.world = (function () {
     }
     g.setAttribute('color', new THREE.BufferAttribute(colArr, 3));
     g.computeVertexNormals();
-    const m = new THREE.MeshLambertMaterial({ vertexColors: true });
+    // subtle procedural detail texture so the ground isn't flat color up close
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 256;
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = '#f4f2ee';
+    ctx.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 3200; i++) {
+      const l = 205 + Math.floor(Math.random() * 55);
+      ctx.fillStyle = `rgba(${l},${l},${Math.floor(l * 0.96)},${0.25 + Math.random() * 0.3})`;
+      const w = 1 + Math.random() * 2.4;
+      ctx.fillRect(Math.random() * 256, Math.random() * 256, w, w * (0.5 + Math.random()));
+    }
+    const detail = new THREE.CanvasTexture(cv);
+    detail.wrapS = detail.wrapT = THREE.RepeatWrapping;
+    detail.repeat.set(56, 56);
+    detail.colorSpace = THREE.SRGBColorSpace;
+    const m = new THREE.MeshLambertMaterial({ vertexColors: true, map: detail });
     terrainMesh = new THREE.Mesh(g, m);
     terrainMesh.receiveShadow = true;
     G.scene.add(terrainMesh);
   }
 
   function makeWater() {
-    const g = new THREE.PlaneGeometry(SIZE, SIZE, 1, 1);
+    // subdivided plane with a precomputed per-vertex depth attribute:
+    // depth-based color, animated swell, shore foam and shallow caustics
+    const seg = 150;
+    const g = new THREE.PlaneGeometry(SIZE, SIZE, seg, seg);
     g.rotateX(-Math.PI / 2);
+    const pos = g.attributes.position;
+    const depthArr = new Float32Array(pos.count);
+    for (let i = 0; i < pos.count; i++) {
+      depthArr[i] = Math.max(0, -W.heightAt(pos.getX(i), pos.getZ(i)));
+    }
+    g.setAttribute('depth', new THREE.BufferAttribute(depthArr, 1));
     waterMat = new THREE.ShaderMaterial({
       transparent: true, depthWrite: false,
       uniforms: {
         uTime: { value: 0 },
-        uShallow: { value: new THREE.Color(0x49c8d8) },
-        uDeepC: { value: new THREE.Color(0x1a6f9c) },
+        uShallow: { value: new THREE.Color(0x53d6e0) },
+        uDeepC: { value: new THREE.Color(0x156a9e) },
         uSunFactor: { value: 1.0 },
       },
       vertexShader: `
+        attribute float depth;
         varying vec3 vWorld;
+        varying float vDepth;
         uniform float uTime;
         void main() {
           vec3 p = position;
           vec4 wp = modelMatrix * vec4(p, 1.0);
+          // gentle swell, damped in the shallows so shorelines stay put
+          float amp = 0.07 * clamp(depth, 0.0, 1.0);
+          wp.y += (sin(wp.x * 0.35 + uTime * 1.4) * sin(wp.z * 0.3 - uTime * 1.1)
+                 + sin(wp.x * 0.13 - uTime * 0.6) * 0.6) * amp;
           vWorld = wp.xyz;
+          vDepth = depth;
           gl_Position = projectionMatrix * viewMatrix * wp;
         }`,
       fragmentShader: `
         varying vec3 vWorld;
+        varying float vDepth;
         uniform float uTime; uniform vec3 uShallow; uniform vec3 uDeepC; uniform float uSunFactor;
         void main() {
           float w1 = sin(vWorld.x * 0.25 + uTime * 1.1) * sin(vWorld.z * 0.21 - uTime * 0.9);
           float w2 = sin(vWorld.x * 0.61 - uTime * 1.7 + vWorld.z * 0.43);
           float shimmer = w1 * 0.5 + w2 * 0.5;
-          vec3 col = mix(uDeepC, uShallow, 0.58 + shimmer * 0.2);
-          // fine sparkle highlights
-          float sp = smoothstep(0.88, 1.0, sin(vWorld.x * 4.3 + uTime * 2.2) * sin(vWorld.z * 4.9 - uTime * 1.7));
-          col += vec3(0.9, 0.98, 1.0) * sp * 0.4 * uSunFactor;
-          col *= (0.55 + 0.5 * uSunFactor);
-          gl_FragColor = vec4(col, 0.58);
+          // true depth gradient: bright turquoise shallows -> deep blue channels
+          float dfac = clamp(vDepth / 5.5, 0.0, 1.0);
+          vec3 col = mix(uShallow, uDeepC, dfac);
+          col = mix(col, col * 1.12, shimmer * 0.5 + 0.5);
+          // caustic light-webs dancing in the shallows
+          float ca = sin(vWorld.x * 1.55 + uTime * 1.35) * sin(vWorld.z * 1.75 - uTime * 1.1);
+          float cb = sin((vWorld.x + vWorld.z) * 1.2 - uTime * 0.9) * sin((vWorld.x - vWorld.z) * 1.45 + uTime * 1.25);
+          float caustic = pow(max(ca * cb, 0.0), 2.0);
+          float shallowMask = smoothstep(3.5, 0.6, vDepth) * smoothstep(0.05, 0.35, vDepth);
+          col += vec3(0.65, 0.9, 0.95) * caustic * shallowMask * 0.55 * uSunFactor;
+          // foam ring hugging the shore
+          float foamBand = smoothstep(0.42, 0.06, vDepth);
+          float foamN = sin(vWorld.x * 2.6 + uTime * 1.8) * sin(vWorld.z * 2.9 - uTime * 1.5)
+                      + sin(vWorld.x * 5.2 - uTime * 2.4) * 0.5;
+          float foam = foamBand * clamp(0.55 + foamN * 0.45, 0.0, 1.0);
+          col = mix(col, vec3(0.94, 0.99, 1.0), foam * 0.75);
+          // fine sparkle highlights (skewed frequencies so they don't read as a grid)
+          float sp = smoothstep(0.94, 1.0, sin(vWorld.x * 4.1 + vWorld.z * 1.3 + uTime * 2.2)
+                                         * sin(vWorld.z * 5.7 - vWorld.x * 0.9 - uTime * 1.7));
+          col += vec3(0.9, 0.98, 1.0) * sp * 0.3 * uSunFactor;
+          col *= (0.5 + 0.55 * uSunFactor);
+          float alpha = mix(0.62, 0.86, dfac);
+          alpha = max(alpha, foam * 0.9);
+          gl_FragColor = vec4(col, alpha);
         }`,
     });
     const mesh = new THREE.Mesh(g, waterMat);
@@ -175,6 +228,86 @@ G.world = (function () {
     });
     const sky = new THREE.Mesh(new THREE.SphereGeometry(900, 24, 14), skyMat);
     G.scene.add(sky);
+  }
+
+  // canvas-drawn celestial sprites: sun, moon, clouds, stars (no external files)
+  function radialTex(size, stops) {
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = size;
+    const ctx = cv.getContext('2d');
+    const gr = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+    for (const [t, c] of stops) gr.addColorStop(t, c);
+    ctx.fillStyle = gr;
+    ctx.fillRect(0, 0, size, size);
+    const tex = new THREE.CanvasTexture(cv);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  }
+
+  function cloudTex() {
+    const cv = document.createElement('canvas');
+    cv.width = 320; cv.height = 160;
+    const ctx = cv.getContext('2d');
+    for (let i = 0; i < 9; i++) {
+      const x = 50 + Math.random() * 220, y = 70 + Math.random() * 50, r = 26 + Math.random() * 34;
+      const gr = ctx.createRadialGradient(x, y, 0, x, y, r);
+      gr.addColorStop(0, 'rgba(255,255,255,0.85)');
+      gr.addColorStop(0.65, 'rgba(255,255,255,0.4)');
+      gr.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = gr;
+      ctx.fillRect(0, 0, 320, 160);
+    }
+    const tex = new THREE.CanvasTexture(cv);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  }
+
+  function makeSkyExtras() {
+    const sunTex = radialTex(256, [[0, 'rgba(255,250,225,1)'], [0.25, 'rgba(255,238,180,0.95)'],
+      [0.5, 'rgba(255,215,140,0.32)'], [1, 'rgba(255,200,120,0)']]);
+    sunSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: sunTex, transparent: true, depthWrite: false, depthTest: false, fog: false }));
+    sunSprite.scale.setScalar(150);
+    sunSprite.renderOrder = -1;
+    G.scene.add(sunSprite);
+
+    const moonTex = radialTex(256, [[0, 'rgba(235,242,255,1)'], [0.4, 'rgba(215,228,255,0.9)'],
+      [0.5, 'rgba(200,215,255,0.25)'], [1, 'rgba(190,210,255,0)']]);
+    moonSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: moonTex, transparent: true, depthWrite: false, depthTest: false, fog: false }));
+    moonSprite.scale.setScalar(90);
+    moonSprite.renderOrder = -1;
+    G.scene.add(moonSprite);
+
+    // stars — two layers on the upper dome
+    function starPoints(n, size) {
+      const g = new THREE.BufferGeometry();
+      const arr = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) {
+        const a = U.rand(0, U.TAU), e = Math.asin(U.rand(0.06, 1));
+        arr[i * 3] = Math.cos(a) * Math.cos(e) * 850;
+        arr[i * 3 + 1] = Math.sin(e) * 850;
+        arr[i * 3 + 2] = Math.sin(a) * Math.cos(e) * 850;
+      }
+      g.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+      const m = new THREE.PointsMaterial({ color: 0xeaf2ff, size, transparent: true, opacity: 0, depthWrite: false, fog: false, sizeAttenuation: false });
+      const p = new THREE.Points(g, m);
+      p.frustumCulled = false;
+      G.scene.add(p);
+      return p;
+    }
+    stars = starPoints(520, 1.6);
+    starsBright = starPoints(70, 3.2);
+
+    // drifting clouds
+    cloudMat = new THREE.SpriteMaterial({ map: cloudTex(), transparent: true, opacity: 0.75, depthWrite: false, fog: false });
+    for (let i = 0; i < 13; i++) {
+      const c = new THREE.Sprite(cloudMat);
+      const s = U.rand(55, 130);
+      c.scale.set(s, s * 0.45, 1);
+      c.position.set(U.rand(-430, 430), U.rand(55, 100), U.rand(-430, 430));
+      c.userData.speed = U.rand(0.6, 1.6);
+      G.scene.add(c);
+      clouds.push(c);
+    }
   }
 
   // ---------------- Vegetation & props ----------------
@@ -605,6 +738,7 @@ G.world = (function () {
   W.build = function () {
     G.scene.fog = new THREE.FogExp2(0xbfe8ef, 0.0088);
     makeSky();
+    makeSkyExtras();
     makeLights();
     makeTerrain();
     makeWater();
@@ -688,6 +822,23 @@ G.world = (function () {
     const night = sk.intensity < 0.3;
     moonGlow.intensity = night ? 0.7 : 0;
     if (G.player) moonGlow.position.set(px, 8, pz);
+
+    // celestial sprites follow the day cycle
+    const cam = G.camera.position;
+    _dir.set(Math.cos(sunA), Math.sin(sunA) * 1.1 + 0.12, 0.42).normalize();
+    sunSprite.position.set(cam.x + _dir.x * 780, cam.y + _dir.y * 780, cam.z + _dir.z * 780);
+    sunSprite.material.opacity = U.clamp((_dir.y + 0.08) * 5, 0, 1) * rainDim;
+    moonSprite.position.set(cam.x - _dir.x * 780, cam.y - _dir.y * 780, cam.z - _dir.z * 780);
+    moonSprite.material.opacity = U.clamp((-_dir.y + 0.05) * 4, 0, 0.95) * rainDim;
+    const starVis = U.clamp(1 - sk.intensity * 2.6, 0, 1) * (env.raining ? 0.25 : 1);
+    stars.material.opacity = starVis * 0.85;
+    starsBright.material.opacity = starVis * (0.75 + Math.sin(t * 2.2) * 0.25);
+    cloudMat.opacity = (0.35 + sk.intensity * 0.45) * (env.raining ? 0.95 : 1);
+    cloudMat.color.setScalar(env.raining ? 0.45 : 0.6 + sk.intensity * 0.4);
+    for (const c of clouds) {
+      c.position.x += c.userData.speed * dt * (env.raining ? 3 : 1);
+      if (c.position.x > 460) c.position.x = -460;
+    }
 
     // fireflies at night near the player
     if (night && !underwater && Math.random() < dt * 6) {

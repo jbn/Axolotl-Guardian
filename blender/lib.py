@@ -335,6 +335,57 @@ def set_mat(o, m):
     o.data.materials.append(m)
     return o
 
+# ---------------------------------------------------------------- AO bake
+
+def bake_ao(roots, samples=24, floor=0.42):
+    """Bake ambient occlusion into the 'Col' vertex colors (multiplied in).
+    Gives the flat-shaded models soft contact shadows / clay depth for free —
+    no textures, no payload, no loader changes."""
+    objs = [o for o in _descendants(roots)
+            if o.type == 'MESH' and o.data.color_attributes.get('Col')]
+    if not objs:
+        return
+    sc = bpy.context.scene
+    prev_engine = sc.render.engine
+    sc.render.engine = 'CYCLES'
+    sc.cycles.samples = samples
+    sc.render.bake.target = 'VERTEX_COLORS'
+    if sc.world is None:
+        sc.world = bpy.data.worlds.new('BakeWorld')
+    # AO radius relative to asset size
+    lo = Vector((1e9,) * 3)
+    hi = Vector((-1e9,) * 3)
+    for o in objs:
+        for corner in o.bound_box:
+            p = o.matrix_world @ Vector(corner)
+            lo = Vector(map(min, lo, p))
+            hi = Vector(map(max, hi, p))
+    dist = max(0.4, min(3.0, (hi - lo).length * 0.22))
+    try:
+        sc.world.light_settings.distance = dist
+    except Exception:
+        pass
+
+    for o in objs:
+        me = o.data
+        ao = me.color_attributes.new('AO', 'FLOAT_COLOR', 'POINT')
+        me.color_attributes.active_color = ao
+        try:
+            with bpy.context.temp_override(**_ctx([o])):
+                bpy.ops.object.bake(type='AO')
+            col = me.color_attributes.get('Col')
+            for i in range(len(me.vertices)):
+                a = ao.data[i].color[0]
+                a = floor + (1.0 - floor) * a
+                c = col.data[i].color
+                col.data[i].color = (c[0] * a, c[1] * a, c[2] * a, c[3])
+        except Exception as ex:
+            print('AO bake skipped for', o.name, ex)
+        me.color_attributes.remove(me.color_attributes.get('AO'))
+        me.color_attributes.active_color = me.color_attributes.get('Col')
+    sc.render.engine = prev_engine
+
+
 # ---------------------------------------------------------------- export
 
 def _gltf_kwargs(**want):

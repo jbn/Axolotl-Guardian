@@ -56,10 +56,15 @@ WebAudio sound & generative music — zero dependencies, no server needed, ~120 
 
 All 39 models (player, enemies, boss, vegetation, architecture, pickups, hats) are
 authored in **Blender** by the scripts in `blender/`, exported as GLB with vertex
-colors, and embedded as base64 in `js/assets-data.js` so the game still runs from a
-double-clicked `index.html` — no fetches, no CORS. A tiny custom GLB parser
-(`js/assets.js`) instantiates them as named node hierarchies that the gameplay code
-animates directly (gills, claws, whiskers, jaws...).
+colors (with Cycles-baked ambient occlusion multiplied in), and embedded as base64
+in `js/assets-data.js` so the game still runs from a double-clicked `index.html` —
+no fetches, no CORS. A tiny custom GLB parser (`js/assets.js`) instantiates them as
+named node hierarchies that the gameplay code animates directly (gills, claws,
+whiskers, jaws...).
+
+Rendering extras: hand-rolled bloom post-processing (`js/post.js`), depth-graded
+water with swell, shore foam and shallow caustics, sun/moon discs, drifting clouds,
+stars at night, and a procedural canvas detail texture on the terrain.
 
 | File | What it does |
 |---|---|
