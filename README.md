@@ -17,11 +17,12 @@ capture the mouse; press **ESC** to release it / pause.
 | **Mouse** | Look around |
 | **SPACE** | Swim up • leap out of water • hop on land |
 | **C** | Dive down |
-| **Left click** | 🌊 Tail whip (melee arc) |
+| **Left click** | 🌊 Tail whip — chain up to a 3-hit combo ending in a spinning slam (whip mid-leap for an air spin) |
 | **Right click (hold)** | 💧 Charged water blast — full charge pierces |
 | **Q** | 🫧 Bubble shield — blocks hits, *reflects* spores |
 | **E** | 🌀 Whirlpool spin — hits groups, flips shelled enemies |
-| **SHIFT** | 💨 Dash (brief invincibility — your dodge) |
+| **SHIFT** | 💨 Dash (brief invincibility) — dash *through* an attack for a slow-mo **Perfect Dodge** and a guaranteed crit |
+| **F** / **Middle click** | 🎯 Lock on to the nearest enemy (blasts home in, camera tracks it) |
 | **TAB** | 🗺️ World map (a minimap is always in the corner) |
 | **H** | Swap cosmetic hats & accessories |
 | **J** | 🎨 Swap skin colors (unlocked by finding relics) |
@@ -29,7 +30,7 @@ capture the mouse; press **ESC** to release it / pause.
 | **M** | Toggle music |
 
 🎮 **Gamepad supported**: left stick swim, right stick look, A jump, B dash, X whip,
-Y whirlpool, LB shield, RT charge blast, RB hat, Select map, Start pause.
+Y whirlpool, LB shield, RT charge blast, RB hat, R3 lock-on, Select map, Start pause.
 
 Progress **saves automatically** at every milestone — CONTINUE appears on the title
 screen. After freeing the Crystal Catfish King, ride his back for a victory lap!
@@ -45,7 +46,8 @@ regions — each gate unlocks a new water ability and fully heals you. At the te
 face the **Crystal Catfish King** in a three-phase battle... and free him, don't destroy him.
 
 ### Creatures to outsmart
-Every enemy telegraphs its attacks — watch, then counter:
+Every enemy flashes a red **!** the instant it commits to an attack — watch, then counter.
+Exploiting a weakness lands a golden **crit**; damage numbers and health bars show what's working:
 - 🦀 **Crystal crabs** — crack the shell first (blasts work fast; whirlpool flips them)
 - 🌿 **Thorn vines** — they rattle before striking; water blasts sever them in two hits
 - 🐸 **Shadow frogs** — hit them mid-puff to stun; their spores can be reflected with the shield
@@ -64,38 +66,30 @@ Every enemy telegraphs its attacks — watch, then counter:
 ## Tech
 
 Plain JavaScript + [Three.js](https://threejs.org) (vendored in `vendor/`), procedural
-WebAudio sound & generative music — zero dependencies, no server needed, ~120 FPS.
+WebAudio sound & music — zero dependencies, no build step, no server needed.
 
-All 39 models (player, enemies, boss, vegetation, architecture, pickups, hats) are
-authored in **Blender** by the scripts in `blender/`, exported as GLB with vertex
+**Rendering** (`js/post.js`, `js/gfx.js`, `js/world.js`, `js/grass.js`)
+- HDR pipeline: MSAA half-float scene target → dual-kawase bloom → ACES filmic tone
+  mapping, color grade, vignette, dithering; underwater wobble, hurt aberration, slow-mo grade.
+- Water: a depth/refraction prepass feeds a shader with true thickness-based absorption,
+  refraction, fresnel sky reflection, HDR sun glints, contact + shoreline foam, rain
+  ripples, a wake around the axolotl, and Snell's window when you look up from below.
+- A global material patch adds animated caustics to everything underwater and a fresnel
+  rim light to characters; terrain gets slope rock, wet shorelines and rippled sand.
+- ~60k GPU grass blades + wildflowers in a camera-following field (heights baked into a
+  half-float texture), with wind gusts and grass that parts around you.
+- Analytic sky with a blooming sun disc, layered distant hills, a forested rim, soft
+  light beams, and per-zone atmosphere (dim glowing Crystal Caverns, a brooding temple
+  that brightens once cleansed).
+
+**Audio** (`js/audio.js`): lookahead-scheduled generative music with per-zone chord
+progressions and phrase-based motifs, synthesized percussion for the boss, convolution
+reverb, a master compressor, and marsh / underwater / cavern ambience beds.
+
+**Models**: all 39 models (player, enemies, boss, vegetation, architecture, pickups, hats)
+are authored in **Blender** by the scripts in `blender/`, exported as GLB with vertex
 colors (with Cycles-baked ambient occlusion multiplied in), and embedded as base64
 in `js/assets-data.js` so the game still runs from a double-clicked `index.html` —
 no fetches, no CORS. A tiny custom GLB parser (`js/assets.js`) instantiates them as
 named node hierarchies that the gameplay code animates directly (gills, claws,
 whiskers, jaws...).
-
-Rendering extras: hand-rolled bloom post-processing (`js/post.js`), depth-graded
-water with swell, shore foam and shallow caustics, sun/moon discs, drifting clouds,
-stars at night, and a procedural canvas detail texture on the terrain.
-
-| File | What it does |
-|---|---|
-| `js/world.js` | Terrain, water & sky shaders, zones, gates, day/night, weather |
-| `js/player.js` | Axolotl model, swim/hop movement, camera, all four abilities |
-| `js/enemies.js` | The seven enemy AIs with telegraphs & weaknesses |
-| `js/boss.js` | Crystal Catfish King — 3 phases, hazards, cleansing finale |
-| `js/pickups.js` | Pearls, hearts, babies, relics, cosmetic chests |
-| `js/assets.js` / `js/assets-data.js` | Embedded-GLB parser / generated asset data |
-| `js/fx.js` / `js/audio.js` | Particle systems / procedural SFX & music |
-| `js/ui.js` / `js/main.js` | HUD & screens / game loop, progression, cinematics |
-
-### Rebuilding the art (optional — needs Blender 4.2+)
-
-```
-blender --background --python blender/build.py -- all --pack        # everything
-blender --background --python blender/build.py -- axolotl --preview # one asset + render
-```
-
-`blender/lib.py` is the toolkit (blob "clay" modeling via voxel remesh, vertex
-painting, GLB export, Cycles preview renders); `blender/characters.py` and
-`blender/props.py` define each asset. `--pack` regenerates `js/assets-data.js`.

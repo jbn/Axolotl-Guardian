@@ -2,6 +2,11 @@
 G.ui = (function () {
   const $ = id => document.getElementById(id);
   let toastTimer = null, unlockTimer = null;
+  let prevHearts = -1, prevPearls = -1, beatT = 0, comboTimer = null;
+  const prevCd = {};
+  const HEART_SVG = '<svg viewBox="0 0 32 30"><path class="hf" d="M16 28.5C16 28.5 2.2 19.6 2.2 10.2A7 7 0 0 1 16 6.2A7 7 0 0 1 29.8 10.2C29.8 19.6 16 28.5 16 28.5Z"/>' +
+    '<ellipse class="hl" cx="9.5" cy="10.5" rx="3.2" ry="2.1" transform="rotate(-35 9.5 10.5)"/></svg>';
+  function retrigger(el, cls) { el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); }
 
   const UI = {
     show(id) { $(id).style.display = 'flex'; },
@@ -16,15 +21,22 @@ G.ui = (function () {
         for (let i = 0; i < s.maxHearts; i++) {
           const h = document.createElement('div');
           h.className = 'heart';
-          h.textContent = '💗';
-          h.style.fontSize = '22px';
+          h.innerHTML = HEART_SVG;
           hb.appendChild(h);
         }
       }
       [...hb.children].forEach((h, i) => {
-        h.classList.toggle('lost', i >= s.hearts);
+        const was = i < prevHearts, now = i < s.hearts;
+        h.classList.toggle('lost', !now);
+        if (prevHearts >= 0 && was && !now) retrigger(h, 'break');
+        if (prevHearts >= 0 && !was && now) retrigger(h, 'pop');
       });
+      if (prevHearts >= 0 && s.hearts < prevHearts) retrigger(hb, 'shake');
+      prevHearts = s.hearts;
+      hb.classList.toggle('low', s.hearts > 0 && s.hearts <= 2);
       $('pearl-count').textContent = s.pearls;
+      if (prevPearls >= 0 && s.pearls > prevPearls) retrigger($('pearl-box'), 'pop');
+      prevPearls = s.pearls;
       $('collect-box').innerHTML =
         `🐣 ${s.babies.length}/3 &nbsp; 🏺 ${s.relics}/3`;
       // ability lock states
@@ -37,11 +49,49 @@ G.ui = (function () {
       const p = G.player;
       if (!p) return;
       const set = (id, key) => {
-        const frac = p.cd[key] / p.CD[key];
-        $(id).querySelector('.cd').style.height = (frac * 100) + '%';
+        const frac = U.clamp(p.cd[key] / p.CD[key], 0, 1);
+        const q = Math.round(frac * 180) / 180;
+        if (prevCd[id] === q) return;
+        const el = $(id);
+        el.querySelector('.cd').style.background = q > 0
+          ? `conic-gradient(rgba(3, 14, 24, .74) ${q * 360}deg, rgba(3, 14, 24, 0) 0)` : 'none';
+        if (prevCd[id] > 0 && q === 0 && key !== 'whip') retrigger(el, 'ready');
+        prevCd[id] = q;
       };
       set('ab-whip', 'whip'); set('ab-blast', 'blast');
       set('ab-shield', 'shield'); set('ab-whirl', 'whirl'); set('ab-dash', 'dash');
+      // low-health heartbeat
+      const s = G.state;
+      if (s.hearts > 0 && s.hearts <= 2 && !p.dead) {
+        beatT -= G.fx.realDt();
+        if (beatT <= 0) { beatT = s.hearts === 1 ? 0.9 : 1.2; G.audio.play('lowHealth'); retrigger($('low-vignette'), 'beat'); }
+      } else beatT = 0;
+    },
+
+    // "x5 COMBO" counter — n < 2 hides it
+    combo(n, crit) {
+      const el = $('combo');
+      if (!el) return;
+      if (n < 2) { el.classList.remove('show'); return; }
+      el.querySelector('.cn').textContent = n;
+      el.classList.add('show');
+      el.classList.toggle('hot', n >= 6);
+      retrigger(el, crit ? 'critpop' : 'bump');
+      if (comboTimer) clearTimeout(comboTimer);
+      comboTimer = setTimeout(() => el.classList.remove('show'), 2400);
+    },
+
+    perfect() {
+      retrigger($('perfect-flash'), 'on');
+      const d = $('ab-dash');
+      retrigger(d, 'ready');
+    },
+
+    bossPhase(p) {
+      const n = $('boss-name');
+      n.textContent = 'CRYSTAL CATFISH KING' + (p === 2 ? ' · ENRAGED' : p === 3 ? ' · FINAL FORM' : '');
+      retrigger($('boss-bar-wrap'), 'phase');
+      document.querySelectorAll('#boss-pips i').forEach((pip, i) => pip.classList.toggle('on', i < p));
     },
 
     objective(text) {
@@ -90,7 +140,13 @@ G.ui = (function () {
     bossBar(frac, show) {
       const w = $('boss-bar-wrap');
       if (show !== undefined) w.style.display = show ? 'block' : 'none';
-      if (frac !== undefined) $('boss-bar').style.width = Math.max(0, frac * 100) + '%';
+      if (show) this.bossPhase(1);
+      if (frac !== undefined) {
+        const pct = Math.max(0, frac * 100) + '%';
+        $('boss-bar').style.width = pct;
+        $('boss-bar-chip').style.width = pct;
+        if (show === undefined) retrigger($('boss-bar-bg'), 'hit');
+      }
       if (frac !== undefined && frac <= 0) w.style.display = 'none';
     },
 

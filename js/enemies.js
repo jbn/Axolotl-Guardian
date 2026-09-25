@@ -23,10 +23,107 @@
 
   function flashHit(e) {
     e.flash = 0.15;
-    for (const m of e.mats) { m._e0 = m._e0 ?? m.emissiveIntensity; m.emissiveIntensity = 1.4; m._ec = m._ec || m.emissive.clone(); m.emissive.set(0xffffff); }
+    for (const m of e.mats) { m._e0 = m._e0 ?? m.emissiveIntensity; m.emissiveIntensity = 0.9; m._ec = m._ec || m.emissive.clone(); m.emissive.set(0xffffff); }
   }
   function unflash(e) {
     for (const m of e.mats) { if (m._ec) { m.emissive.copy(m._ec); m.emissiveIntensity = m._e0 ?? 0.3; } }
+  }
+
+  // ---------------- shared hit feedback (also used by the boss) ----------------
+  const _fp = new THREE.Vector3(), _fd = new THREE.Vector3();
+  G.hitFeedback = function (target, lost, crit, fromPos, o = {}) {
+    _fp.copy(target.pos); _fp.y += o.h || 1.4;
+    _fd.copy(target.pos).sub(fromPos || G.player.pos).setY(0);
+    if (_fd.lengthSq() < 1e-4) _fd.set(0, 0, 1);
+    _fd.normalize();
+    if (lost > 0) {
+      G.fx.text(_fp, crit ? lost + '!' : String(lost), { crit, size: o.big ? 1.4 : 1 });
+      G.fx.star(_fp, crit ? 0xffe24a : 0xffffff, crit ? 2.8 : 1.7);
+      G.fx.sparks(_fp, _fd, crit ? 0xffd84a : 0xbff4ff, crit ? 20 : 11, crit ? 12 : 9);
+      G.fx.hitStop(Math.min(0.028 + lost * 0.014 + (crit ? 0.035 : 0), 0.11));
+      G.fx.shake(Math.min(0.05 + lost * 0.035 + (crit ? 0.1 : 0), 0.38), 0.2);
+      if (crit) G.audio.play('crit');
+      if (G.player.registerHit) G.player.registerHit(crit);
+    } else if (o.blockText) {
+      G.fx.text(_fp, o.blockText, { color: o.blockColor || '#c8d4ea', color2: '#8a9ab8', px: 42, size: 0.75, vy: 2.2, dur: 0.6 });
+      G.fx.star(_fp, 0xc8d8ff, 1.1, 0.12);
+      if (G.player.registerHit) G.player.registerHit(false, true);
+    }
+  };
+
+  // ---------------- world-space health bars (pooled, billboarded) ----------------
+  const bars = [];
+  const barGeo = new THREE.PlaneGeometry(1, 1).translate(0.5, 0, 0);
+  const BAR_W = 1.7;
+  function barMat(color, op = 1) {
+    return new THREE.MeshBasicMaterial({ color, transparent: true, opacity: op, depthTest: false, depthWrite: false, fog: false });
+  }
+  function makeBar() {
+    const grp = new THREE.Group();
+    const bg = new THREE.Mesh(barGeo, barMat(0x0a1822, 0.75));
+    bg.scale.set(BAR_W + 0.12, 0.26, 1); bg.position.x = -(BAR_W + 0.12) / 2;
+    const chip = new THREE.Mesh(barGeo, barMat(0xfff2c8));
+    chip.scale.set(BAR_W, 0.16, 1); chip.position.set(-BAR_W / 2, 0, 0.001);
+    const fill = new THREE.Mesh(barGeo, barMat(0xff5f8f));
+    fill.scale.set(BAR_W, 0.16, 1); fill.position.set(-BAR_W / 2, 0, 0.002);
+    const armor = new THREE.Mesh(barGeo, barMat(0xc9a8ff));
+    armor.scale.set(BAR_W, 0.08, 1); armor.position.set(-BAR_W / 2, 0.19, 0.002);
+    [bg, chip, fill, armor].forEach((m, i) => { m.renderOrder = 15 + i; m.frustumCulled = false; });
+    grp.add(bg, chip, fill, armor);
+    grp.visible = false;
+    G.scene.add(grp);
+    return { grp, bg, chip, fill, armor, chipF: 1, owner: null };
+  }
+  function showBar(e) {
+    if (!e.bar) {
+      e.bar = bars.find(b => !b.owner) || (bars.push(makeBar()), bars[bars.length - 1]);
+      e.bar.owner = e;
+      e.bar.chipF = e.hp / e.maxHp;
+    }
+    e.barT = 4;
+  }
+  function releaseBar(e) {
+    if (!e.bar) return;
+    e.bar.owner = null; e.bar.grp.visible = false; e.bar = null;
+  }
+  function updateBar(e, dt) {
+    const b = e.bar;
+    e.barT -= dt;
+    if (e.barT <= 0) { releaseBar(e); return; }
+    const f = U.clamp(e.hp / e.maxHp, 0, 1);
+    b.chipF = f > b.chipF ? f : U.damp(b.chipF, f, e.barT < 3.4 ? 5 : 0.5, dt);
+    b.fill.scale.x = Math.max(0.0001, BAR_W * f);
+    b.chip.scale.x = Math.max(0.0001, BAR_W * b.chipF);
+    b.fill.material.color.set(e.charged ? 0x7fe8ff : (e.stun > 0 || e.state === 'tired' || e.state === 'inflate') ? 0xffd84a : 0xff5f8f);
+    const armorF = e.shellHp !== undefined ? Math.max(0, e.shellHp) / 2 : 0;
+    b.armor.visible = armorF > 0;
+    b.armor.scale.x = Math.max(0.0001, BAR_W * armorF);
+    const op = Math.min(1, e.barT / 0.6);
+    b.bg.material.opacity = 0.75 * op; b.chip.material.opacity = op; b.fill.material.opacity = op; b.armor.material.opacity = op;
+    const h = e.barH || 1.9;
+    b.grp.position.set(e.pos.x, e.pos.y + h * (e.type === 'vine' ? e.grp.scale.y : 1), e.pos.z);
+    b.grp.quaternion.copy(G.camera.quaternion);
+    const dist = G.camera.position.distanceTo(b.grp.position);
+    b.grp.scale.setScalar(U.clamp(dist / 14, 0.7, 1.6));
+    b.grp.visible = true;
+  }
+
+  // wrap an enemy's hit() so every hit gets numbers, squash, sparks, bars
+  function wrapHit(e) {
+    const orig = e.hit;
+    e.hit = function (dmg, kind, fromPos) {
+      if (!e.alive) return;
+      let forced = false;
+      if (G.player.critReady && kind !== 'dash') { dmg *= 2; forced = true; G.player.critReady = false; }
+      e.critHit = false; e.blockText = null;
+      const hp0 = e.hp, sh0 = e.shellHp;
+      orig(dmg, kind, fromPos);
+      const lost = Math.max(0, hp0 - Math.max(e.hp, 0));
+      let blockText = e.blockText;
+      if (!lost && sh0 !== undefined && e.shellHp < sh0) blockText = e.shellHp <= 0 ? 'SHATTER!' : 'CRACK';
+      G.hitFeedback(e, lost, lost > 0 && (forced || e.critHit), fromPos, { h: (e.barH || 1.9) * 0.7, blockText, blockColor: blockText === 'SHATTER!' ? '#e8c8ff' : null });
+      if (lost > 0 || blockText) { e.sqT = 0.2; if (e.alive) showBar(e); }
+    };
   }
 
   function die(e, opts = {}) {
@@ -89,7 +186,9 @@
     e.claws = claws;
     collectMats(e);
 
+    e.barH = 1.9;
     e.hit = function (dmg, kind, fromPos) {
+      if (e.stun > 0) e.critHit = true;   // flipped crab = belly exposed
       if (e.stun <= 0 && e.shellHp > 0 && kind !== 'whirl') {
         e.shellHp -= (kind === 'blast' ? 2 : 1);
         G.audio.play('crack');
@@ -134,7 +233,7 @@
         e.vel.addScaledVector(U.v1, (d > 3.4 ? 5.5 : 0) * dt * 6);
         e.vel.addScaledVector(U.v2, dt * 6);
         e.attackCd -= dt;
-        if (d < 3.6 && e.attackCd <= 0) { e.state = 'windup'; e.t = 0; }
+        if (d < 3.6 && e.attackCd <= 0) { e.state = 'windup'; e.t = 0; G.fx.alert(e.pos, 1.9, 0.55, 1, () => e.alive); }
         if (d > 16) e.state = 'idle';
       } else if (e.state === 'windup') {
         // telegraph: claws raise + shake
@@ -169,8 +268,10 @@
     e.grp.scale.y = 0.12; // starts coiled underwater
     collectMats(e);
 
+    e.barH = 3.6;
     e.hit = function (dmg, kind, fromPos) {
       if (e.state === 'dormant') { e.state = 'rising'; e.t = 0; }
+      if (kind === 'blast') e.critHit = true;   // water severs vines
       e.hp -= (kind === 'blast' ? dmg * 2 : dmg);
       flashHit(e);
       G.audio.play('enemyHurt');
@@ -194,7 +295,7 @@
         bud.position.x = bud.userData.x0 + Math.sin(e.t * 2.2 + 4) * 0.6;
         facePlayer(e, dt, 3);
         e.attackCd -= dt;
-        if (d < 4.6 && e.attackCd <= 0) { e.state = 'windup'; e.t = 0; }
+        if (d < 4.6 && e.attackCd <= 0) { e.state = 'windup'; e.t = 0; G.fx.alert(e.pos, 3.6, 0.55, 1, () => e.alive); }
         if (d > 10) e.state = 'retract';
       } else if (e.state === 'windup') {
         // pull back + flash bud
@@ -220,6 +321,7 @@
   function makeFrog(x, z) {
     const e = baseEnemy('frog', x, z, 0.9, 3);
     e.pearls = 2;
+    e.barH = 1.9;
     const model = G.assets.make('frog');
     e.grp.add(model);
     e.body = model.getObjectByName('body');   // eyes ride along when it puffs up
@@ -228,6 +330,7 @@
 
     e.hit = function (dmg, kind, fromPos) {
       const mult = e.state === 'inflate' ? 2 : 1;   // hit while inflated = big damage + stun
+      if (mult > 1) { e.critHit = true; e.blockText = 'POP!'; }
       e.hp -= dmg * mult;
       if (e.state === 'inflate') { e.stun = 1.6; e.state = 'hop'; e.body.scale.set(1, 1, 1); }
       flashHit(e);
@@ -258,7 +361,7 @@
           G.audio.play('hop');
         }
         e.attackCd -= dt;
-        if (e.attackCd <= 0 && d < 15 && d > 3) { e.state = 'inflate'; e.t = 0; }
+        if (e.attackCd <= 0 && d < 15 && d > 3) { e.state = 'inflate'; e.t = 0; G.fx.alert(e.pos, 2.0, 0.75, 1, () => e.alive); }
         if (d > 24) e.state = 'idle';
       } else if (e.state === 'inflate') {
         // telegraph: puffing up
@@ -299,6 +402,8 @@
   function makeSwarm(x, z) {
     const e = baseEnemy('swarm', x, z, 1.6, 3);
     e.pearls = 2;
+    e.barH = 1.7;
+    e.noSquash = true;
     e.waterY = 0.8;
     const proto = G.assets.make('bug');   // clones share this swarm's materials (for hit flash)
     e.bugs = [];
@@ -314,7 +419,7 @@
     collectMats(e);
 
     e.hit = function (dmg, kind, fromPos) {
-      if (kind === 'whirl') dmg = 99;   // whirlpool scatters the whole swarm
+      if (kind === 'whirl') { dmg = 99; e.critHit = true; }   // whirlpool scatters the whole swarm
       e.hp -= dmg;
       flashHit(e);
       G.audio.play('enemyHurt');
@@ -355,6 +460,7 @@
   function makeTurtle(x, z) {
     const e = baseEnemy('turtle', x, z, 1.5, 6);
     e.pearls = 3;
+    e.barH = 2.5;
     // Blender model faces +X; gameplay forward (armor check, charge) is +Z
     const model = G.assets.make('turtle');
     const wrap = new THREE.Group();
@@ -376,15 +482,19 @@
         const fwd = U.v1.set(Math.sin(e.grp.rotation.y), 0, Math.cos(e.grp.rotation.y));
         const toAtk = U.v2.copy(fromPos).sub(e.pos).setY(0).normalize();
         if (fwd.dot(toAtk) > -0.15) {
+          e.blockText = 'ARMOR';
           G.audio.play('crack');
           G.fx.burst(U.v3.copy(e.pos).add(fwd.multiplyScalar(1.2)), 0xd8d8ff, 6, 4);
           if (kind === 'blast' && e.state === 'windup') {   // blast interrupts the charge windup
             e.state = 'tired'; e.t = 0;
+            e.blockText = 'INTERRUPT!';
             G.audio.play('roar');
           }
           return;
         }
+        e.critHit = true;   // struck the soft tail
       }
+      if (e.state === 'tired' || e.stun > 0) e.critHit = true;
       e.hp -= dmg * (e.state === 'tired' || e.stun > 0 ? 2 : 1);
       flashHit(e);
       G.audio.play('enemyHurt');
@@ -413,7 +523,7 @@
         U.v1.copy(G.player.pos).sub(e.pos).setY(0).normalize();
         e.vel.addScaledVector(U.v1, 4 * dt);
         e.attackCd -= dt;
-        if (e.attackCd <= 0 && d < 9) { e.state = 'windup'; e.t = 0; }
+        if (e.attackCd <= 0 && d < 9) { e.state = 'windup'; e.t = 0; G.fx.alert(e.pos, 2.6, 0.85, 1.2, () => e.alive); }
         if (d > 18) e.state = 'idle';
       } else if (e.state === 'windup') {
         // telegraph: jaw opens & glows
@@ -452,6 +562,7 @@
     e.pearls = 4;
     e.waterY = -1.2;
     e.path = path; e.pathIdx = 0;
+    e.barH = 2.1;
     // Blender head faces +X; movement heading is +Z
     const model = G.assets.make('eel_head');
     const wrap = new THREE.Group();
@@ -482,6 +593,7 @@
         // touching a charged eel hurts YOU — attacks fizzle
         G.audio.play('zap');
         G.fx.burst(e.pos, 0x9fdfff, 8, 5);
+        e.blockText = 'ZAP!';
         return;
       }
       e.hp -= dmg;
@@ -525,7 +637,7 @@
         if (Math.random() < dt * 24) {
           G.fx.trailDot(U.v3.copy(e.pos).add(U.v2.set(U.rand(-1.4, 1.4), U.rand(-0.4, 1), U.rand(-1.4, 1.4))), 0xcfefff, 0.5, 0.25);
         }
-        if (!e.warned) { G.audio.play('zap'); e.warned = true; }
+        if (!e.warned) { G.audio.play('zap'); e.warned = true; G.fx.alert(e.pos, 2.2, 1.0, 1.1, () => e.alive); }
       } else {
         if (!e.charged) { e.charged = true; G.audio.play('zap'); }
         e.warned = false;
@@ -540,6 +652,7 @@
   function makeGoblin(x, z) {
     const e = baseEnemy('goblin', x, z, 0.8, 3);
     e.pearls = 2; e.stolen = 0;
+    e.barH = 1.8;
     const model = G.assets.make('goblin');
     e.grp.add(model);
     e.sack = model.getObjectByName('sack');
@@ -615,18 +728,31 @@
 
   G.spawnEnemy = function (type, x, z, opts) {
     const e = factories[type](x, z, opts);
+    wrapHit(e);
+    e.sqT = 0;
+    if (!e.noSquash) { e.sqObj = e.grp.children[0]; e.sq0 = e.sqObj.scale.clone(); }
     G.enemies.push(e);
     return e;
   };
 
+  function squash(e, dt) {
+    if (!e.sqObj || e.sqT <= 0) return;
+    e.sqT = Math.max(0, e.sqT - dt);
+    const f = e.sqT / 0.2;                       // 1 → 0
+    const k = Math.sin(f * Math.PI) * 0.32 * f;   // squash then settle
+    e.sqObj.scale.set(e.sq0.x * (1 + k), e.sq0.y * (1 - k * 1.1), e.sq0.z * (1 + k));
+  }
+
   G.updateEnemies = function (dt) {
     for (let i = G.enemies.length - 1; i >= 0; i--) {
       const e = G.enemies[i];
-      if (!e.alive) { G.enemies.splice(i, 1); continue; }
+      if (!e.alive) { releaseBar(e); G.enemies.splice(i, 1); continue; }
       // skip far-away enemies for perf
-      if (playerDist(e) > 70) continue;
+      if (playerDist(e) > 70) { if (e.bar) releaseBar(e); continue; }
       if (e.flash > 0) { e.flash -= dt; if (e.flash <= 0) unflash(e); }
       e.update(dt);
+      squash(e, dt);
+      if (e.bar) updateBar(e, dt);
     }
   };
 })();

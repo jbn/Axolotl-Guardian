@@ -136,6 +136,7 @@ G.assets = (function () {
         o.material = seen.get(o.material);
       }
       o.castShadow = shadows && !o.material.transparent;
+      G.gfx.patch(o.material);
     });
     return inst;
   };
@@ -148,7 +149,7 @@ G.assets = (function () {
     t.traverse(o => { if (!mesh && o.isMesh && (!nodeName || o.name === nodeName)) mesh = o; });
     if (!mesh) throw new Error('no mesh ' + name + '/' + (nodeName || ''));
     const geo = mesh.geometry.clone().applyMatrix4(mesh.matrixWorld);
-    return { geometry: geo, material: mesh.material };
+    return { geometry: geo, material: G.gfx.patch(mesh.material) };
   };
 
   return A;

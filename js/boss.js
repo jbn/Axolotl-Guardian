@@ -45,6 +45,56 @@ G.makeBoss = function () {
   const shockwaves = [];   // {mesh, r, speed}
   const shards = [];       // {targetMesh, x, z, t, fell, crysMesh}
   let summonTimer = 12;
+  let lastPhase = 1, prevState = '';
+
+  // charge-path warning decal: animated chevrons painted on the water
+  const decal = new THREE.Group();
+  const decalMat = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false,
+    uniforms: { uTime: { value: 0 }, uOp: { value: 0 } },
+    vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: `
+      varying vec2 vUv; uniform float uTime, uOp;
+      void main(){
+        float x = abs(vUv.x - 0.5) * 2.0;
+        float chev = fract(vUv.y * 9.0 - x * 0.9 - uTime * 2.5);
+        float stripe = smoothstep(0.0, 0.12, chev) * smoothstep(0.55, 0.4, chev);
+        float edge = smoothstep(1.0, 0.8, x);
+        float border = smoothstep(0.78, 0.92, x) * edge;
+        float fade = smoothstep(0.0, 0.08, vUv.y) * smoothstep(1.0, 0.7, vUv.y);
+        float a = (stripe * 0.55 + border * 0.8 + 0.12) * edge * fade * uOp;
+        gl_FragColor = vec4(mix(vec3(1.0, 0.25, 0.45), vec3(1.0, 0.85, 0.9), border), a);
+      }`,
+  });
+  const decalPlane = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), decalMat);
+  decalPlane.rotation.x = -Math.PI / 2;
+  decalPlane.renderOrder = 3;
+  decal.add(decalPlane);
+  decal.visible = false;
+  G.scene.add(decal);
+  function showDecal(len, width) {
+    decal.visible = true;
+    decalPlane.scale.set(width, len, 1);
+    decalPlane.position.set(0, 0, len / 2);
+  }
+
+  // mouth glow for the vortex inhale + heart-crystal halo during stagger
+  const glowTex = (function () {
+    const cv = document.createElement('canvas'); cv.width = cv.height = 128;
+    const c = cv.getContext('2d');
+    const g = c.createRadialGradient(64, 64, 0, 64, 64, 64);
+    g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.3, 'rgba(255,255,255,0.55)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+    c.fillStyle = g; c.fillRect(0, 0, 128, 128);
+    const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; return t;
+  })();
+  function glowSprite(color) {
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+    sp.visible = false;
+    G.scene.add(sp);
+    return sp;
+  }
+  const mouthGlow = glowSprite(0x7fe8ff);
+  const heartGlow = glowSprite(0xff5fbe);
 
   function phase() { return B.hp > B.maxHp * 0.66 ? 1 : B.hp > B.maxHp * 0.33 ? 2 : 3; }
   B.phase = phase;
@@ -52,9 +102,16 @@ G.makeBoss = function () {
   // ---------------- Combat ----------------
   B.hit = function (dmg, kind, fromPos) {
     if (!B.alive || B.defeated) return;
+    if (state === 'phaseShift') {
+      G.hitFeedback(B, 0, false, fromPos, { h: 2.6, blockText: 'IMMUNE', blockColor: '#ffb3e0' });
+      return;
+    }
+    let crit = stagger > 0;
+    if (G.player.critReady && kind !== 'dash') { dmg *= 2; crit = true; G.player.critReady = false; }
     const mult = stagger > 0 ? 2 : 1;
-    if (stagger > 0) G.fx.hitStop(0.05);
+    const hp0 = B.hp;
     B.hp = Math.max(0, B.hp - dmg * mult);
+    G.hitFeedback(B, hp0 - B.hp, crit, fromPos, { h: 2.6, big: true });
     flash = 0.12;
     bodyMat.emissive.set(0xffffff); bodyMat.emissiveIntensity = 1;
     G.audio.play('bossHit');
@@ -128,7 +185,32 @@ G.makeBoss = function () {
   }
 
   // ---------------- Fight update ----------------
+  function startPhaseShift(p) {
+    state = 'phaseShift'; t = 0;
+    stagger = 0; heartCrys.visible = false; heartGlow.visible = false;
+    grp.rotation.z = 0;
+    vel.set(0, 0, 0);
+    decal.visible = false;
+    mouth.scale.y = 1;
+    G.audio.play('roar'); G.audio.play('thunder');
+    G.fx.shake(0.7, 1.0);
+    G.fx.hitStop(0.12);
+    G.fx.ring(U.v1.set(B.pos.x, 0.2, B.pos.z), 0xff5fbe, 30, 1.2);
+    G.fx.ring(U.v1.set(B.pos.x, 0.25, B.pos.z), 0xffffff, 18, 0.8);
+    G.fx.burst(B.pos, CORRUPT, 50, 14, 1.1, 1.2);
+    if (G.world.templeCrystals) {
+      for (const c of G.world.templeCrystals) {
+        if (c.userData.cleansed) continue;
+        G.fx.burst(U.v1.copy(c.position).setY(c.position.y + 2), 0xd05fff, 16, 7, 0.9, 0.9, -3);
+        G.fx.star(U.v1, 0xff8fe0, 3.5, 0.4);
+      }
+    }
+    G.ui.toast(p === 2 ? '⚡ Phase 2 — the King is enraged!' : '🔥 Final phase — the corruption surges!', 3200);
+    if (G.ui.bossPhase) G.ui.bossPhase(p);
+  }
+
   B.startFight = function () {
+    lastPhase = 1; prevState = '';
     B.alive = true;
     grp.visible = true;
     state = 'circle'; t = 0;
@@ -147,21 +229,54 @@ G.makeBoss = function () {
     tailGrp.rotation.y = Math.sin(G.time * (state === 'charge' ? 12 : 4)) * 0.5;
     for (const c of crystals) if (c.visible) c.material.emissiveIntensity = 0.75 + Math.sin(G.time * 4 + c.position.x * 3) * 0.25;
 
-    if (B.defeated || !B.alive) return;
+    decalMat.uniforms.uTime.value = G.time;
+    if (B.defeated || !B.alive) { decal.visible = false; mouthGlow.visible = false; heartGlow.visible = false; return; }
 
     const p = phase();
     const d = B.pos.distanceTo(G.player.pos);
+    if (p !== lastPhase) { lastPhase = p; if (p > 1) startPhaseShift(p); }
+
+    // telegraph "!" whenever the King commits to an attack
+    if (state !== prevState) {
+      prevState = state;
+      if (state === 'windup' || state === 'whiskerSlam' || state === 'vortexWind' || state === 'shardRain')
+        G.fx.alert(B.pos, 5.2, state === 'windup' ? 0.9 : 1.0, 2.2, () => B.alive && !B.defeated);
+      if (state !== 'windup') decal.visible = false;
+      if (state !== 'vortexWind' && state !== 'vortex') mouthGlow.visible = false;
+    }
+
+    if (state === 'phaseShift') {
+      // rear up out of the water and roar — brief invulnerable breather for both sides
+      grp.position.y = U.damp(grp.position.y, t < 1.2 ? 2.2 : -1.5, 3, dt);
+      grp.rotation.z = U.damp(grp.rotation.z, t < 1.2 ? -0.45 : 0, 4, dt);
+      facePlayerBoss(dt, 3);
+      mouth.scale.y = 1 + Math.min(t, 0.6) * 3;
+      if (Math.random() < dt * 30) G.fx.trailDot(U.v1.copy(B.pos).add(U.v2.set(U.rand(-4, 4), U.rand(0, 4), U.rand(-4, 4))), 0xd05fff, 0.9, 0.5);
+      if (t > 0.6 && !B.phaseRoared) { B.phaseRoared = true; G.audio.play('roar'); G.fx.ring(U.v1.set(B.pos.x, 0.2, B.pos.z), 0xd05fff, 16, 0.8); }
+      if (t > 1.9) {
+        B.phaseRoared = false;
+        grp.rotation.z = 0; mouth.scale.y = 1;
+        state = 'circle'; t = 0; attackTimer = 1.6;
+      }
+      updateHazards(dt);
+      return;
+    }
 
     if (stagger > 0) {
       stagger -= dt;
       heartCrys.visible = true;
       heartCrys.rotation.y += dt * 4;
-      heartCrys.material.emissiveIntensity = 0.8 + Math.sin(G.time * 8) * 0.4;
+      heartCrys.material.emissiveIntensity = 3 + Math.sin(G.time * 8) * 1.5;   // bloom-bright weak point
+      heartCrys.scale.setScalar(1.15 + Math.sin(G.time * 8) * 0.15);
+      heartCrys.getWorldPosition(heartGlow.position);
+      heartGlow.visible = true;
+      heartGlow.scale.setScalar(4.5 + Math.sin(G.time * 8) * 1.2);
       grp.position.y = U.damp(grp.position.y, -1.2, 2, dt);
       grp.rotation.z = U.damp(grp.rotation.z, 0.35, 3, dt);
       if (Math.random() < dt * 8) G.fx.sparkle(heartCrys.getWorldPosition(U.v1), 0xff5fbe, 3, 0.6);
       if (stagger <= 0) {
         heartCrys.visible = false;
+        heartGlow.visible = false;
         grp.rotation.z = 0;
         state = 'circle'; t = 0;
         G.ui.toast('The King recovers!');
@@ -189,7 +304,7 @@ G.makeBoss = function () {
         } else if (p === 2) {
           state = roll < 0.4 ? 'windup' : roll < 0.7 ? 'whiskerSlam' : 'shardRain';
         } else {
-          state = roll < 0.5 ? 'windup' : roll < 0.7 ? 'vortex' : roll < 0.85 ? 'whiskerSlam' : 'shardRain';
+          state = roll < 0.5 ? 'windup' : roll < 0.7 ? 'vortexWind' : roll < 0.85 ? 'whiskerSlam' : 'shardRain';
         }
       }
       summonTimer -= dt;
@@ -201,7 +316,14 @@ G.makeBoss = function () {
       mouth.scale.y = 1 + Math.min(t, 0.8) * 2.4;
       if (t > 0.35 && !B.roared) { G.audio.play('roar'); B.roared = true; }
       if (Math.random() < dt * 16) G.fx.trailDot(headGrp.getWorldPosition(U.v1), 0xd05fff, 0.8, 0.3);
-      if (t > (p === 3 ? 0.6 : 0.9)) {
+      // paint the charge lane on the water
+      const wdur = p === 3 ? 0.6 : 0.9;
+      decal.position.set(B.pos.x, 0.09, B.pos.z);
+      decal.rotation.y = Math.atan2(G.player.pos.x - B.pos.x, G.player.pos.z - B.pos.z);
+      showDecal((p === 3 ? 32 : 26) * 1.25, 7.5);
+      decalMat.uniforms.uOp.value = Math.min(1, t / wdur * 1.6) * (0.75 + Math.sin(G.time * 22) * 0.25);
+      if (t > wdur) {
+        decal.visible = false;
         B.roared = false;
         mouth.scale.y = 1;
         chargeAt(p === 3 ? 32 : 26);
@@ -269,7 +391,23 @@ G.makeBoss = function () {
       grp.position.y = U.damp(grp.position.y, -0.4, 3, dt);
       if (!B.volleyed) { B.volleyed = true; spawnShardVolley(p === 3 ? 8 : 5); G.ui.toast('☄️ Crystal shards incoming — watch the circles!'); }
       if (t > 2.4) { B.volleyed = false; state = 'circle'; t = 0; attackTimer = U.rand(2.6, 4); }
+    } else if (state === 'vortexWind') {
+      // telegraph: mouth gapes and glows brighter and brighter
+      facePlayerBoss(dt, 5);
+      const k = Math.min(t / 1.1, 1);
+      mouth.scale.y = 1 + k * 2;
+      headGrp.getWorldPosition(mouthGlow.position);
+      mouthGlow.visible = true;
+      mouthGlow.scale.setScalar(2 + k * 6 + Math.sin(G.time * 30) * 0.4 * k);
+      mouthGlow.material.opacity = 0.4 + k * 0.6;
+      if (Math.random() < dt * 30 * k) {
+        const a = U.rand(0, U.TAU), r = U.rand(3, 8);
+        G.fx.trailDot(U.v2.set(mouthGlow.position.x + Math.cos(a) * r, mouthGlow.position.y + U.rand(-1, 2), mouthGlow.position.z + Math.sin(a) * r), 0x9fefff, 0.6, 0.35);
+      }
+      if (t > 1.1) { state = 'vortex'; t = 0; }
     } else if (state === 'vortex') {
+      headGrp.getWorldPosition(mouthGlow.position);
+      mouthGlow.scale.setScalar(7 + Math.sin(G.time * 30) * 0.6);
       // pull the player in — dash away or ride it out with shield
       facePlayerBoss(dt, 5);
       mouth.scale.y = 3;
@@ -286,7 +424,7 @@ G.makeBoss = function () {
         const a = U.rand(0, U.TAU), r = U.rand(4, 14);
         G.fx.trailDot(U.v2.set(B.pos.x + Math.cos(a) * r, U.rand(-1, 2), B.pos.z + Math.sin(a) * r), 0x9fdfff, 0.7, 0.5);
       }
-      if (t > 2.6) { B.vortexing = false; mouth.scale.y = 1; state = 'circle'; t = 0; attackTimer = U.rand(2, 3.4); }
+      if (t > 2.6) { B.vortexing = false; mouth.scale.y = 1; mouthGlow.visible = false; state = 'circle'; t = 0; attackTimer = U.rand(2, 3.4); }
     }
 
     updateHazards(dt);
@@ -360,6 +498,7 @@ G.makeBoss = function () {
   };
   B.bowPos = function () { return new THREE.Vector3(ARENA.x, -1, ARENA.z + 6); };
   B.cleanupHazards = function () {
+    decal.visible = false; mouthGlow.visible = false; heartGlow.visible = false;
     for (const sw of shockwaves) { G.scene.remove(sw.m); }
     shockwaves.length = 0;
     for (const sh of shards) { G.scene.remove(sh.target); G.scene.remove(sh.crys); }
