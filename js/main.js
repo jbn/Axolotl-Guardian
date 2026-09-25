@@ -16,12 +16,15 @@
     G.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     G.renderer.shadowMap.enabled = true;
     G.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    G.renderer.shadowMap.autoUpdate = false;     // post.js refreshes shadows once per frame
     G.renderer.outputColorSpace = THREE.SRGBColorSpace;
     G.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     G.renderer.toneMappingExposure = 1.05;
     G.scene = new THREE.Scene();
     G.camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.1, 1200);
     G.camera.position.set(0, 6, 210);
+    G.camera.layers.enable(1);                    // water surface layer (see post.js)
+    G.camera.layers.enable(2);                    // not-refracted layer (grass)
     window.addEventListener('resize', () => {
       G.camera.aspect = window.innerWidth / window.innerHeight;
       G.camera.updateProjectionMatrix();
@@ -258,6 +261,7 @@
     if (edge(4)) G.player.shield();
     if (edge(5)) G.player.cycleCosmetic();
     if (edge(8)) G.map.toggle();
+    if (edge(11) && G.player.toggleLock) G.player.toggleLock();
     if (edge(9)) pauseGame();
     const rt = btn(7);
     if (rt && !padPrev.rt) G.player.startCharge();
@@ -304,6 +308,7 @@
   // ---------------- Start / death / respawn ----------------
   function startGame() {
     G.audio.start();
+    G.player.grp.rotation.set(0, G.player.yaw - Math.PI / 2, 0);
     G.ui.hide('title-screen');
     document.getElementById('hud').style.display = 'block';
     mode = 'play';
@@ -355,6 +360,7 @@
     document.exitPointerLock();
     G.ui.cineBars(true);
     G.audio.duck(true);
+    document.getElementById('hud').style.display = 'none';
     cine = { steps, idx: 0, t: 0, onDone };
     const s = steps[0];
     if (s.on) s.on();
@@ -376,6 +382,7 @@
         cine = null;
         G.ui.cineBars(false);
         G.audio.duck(false);
+        document.getElementById('hud').style.display = 'block';
         if (done) done();
         return;
       }
@@ -508,7 +515,6 @@
       },
     ], () => {
       mode = 'win';
-      G.state.playTime = G.time;
       G.state.postgame = true;
       G.save.write();
       G.ui.winStats();
@@ -607,7 +613,8 @@
           temple: '⛩️ The Sunken Temple',
         };
         if (names[zone]) G.ui.toast(names[zone], 2600);
-        G.audio.setMood(zone === 'cavern' || zone === 'temple' ? 'cavern' : 'calm');
+        const moods = { marsh: 'calm', forest: 'forest', ruins: 'ruins', cavern: 'cavern', temple: 'temple' };
+        if (moods[zone]) G.audio.setMood(moods[zone]);
       }
     }
   }
@@ -623,6 +630,7 @@
 
   // ---------------- Main loop ----------------
   let lastT = performance.now();
+  let sweepT = 0;
   let frogsAliveLast = -1;
 
   function frame() {
@@ -636,16 +644,22 @@
     if (mode === 'title' || mode === 'paused' || mode === 'dead' || mode === 'win') {
       // gentle idle: world still breathes on title screen
       if (mode === 'title') {
-        G.time += dt * 0.3;
-        G.world.update(dt * 0.3);
-        G.ambient.update(dt * 0.3);
-        const a = G.time * 0.06;
-        G.camera.position.set(Math.cos(a) * 30, 9, 175 + Math.sin(a) * 24);
-        G.camera.lookAt(0, 0, 150);
+        G.time += dt;
+        G.world.update(dt * 0.25);
+        G.ambient.update(dt);
+        // slow low crane around the hero at sunrise, framed right of the title text
+        const pp = G.player.pos, a = 2.2 + G.time * 0.045;
+        const r = 7.2 + Math.sin(G.time * 0.13) * 1.2;
+        G.camera.position.set(pp.x + Math.cos(a) * r, 1.15 + Math.sin(G.time * 0.21) * 0.35, pp.z + Math.sin(a) * r);
+        U.v1.set(Math.cos(a + Math.PI / 2), 0, Math.sin(a + Math.PI / 2));     // shift look-at so the axolotl sits right of centre
+        G.camera.lookAt(pp.x + U.v1.x * 2.6, 0.2, pp.z + U.v1.z * 2.6);
+        G.player.grp.position.y = -0.28 + Math.sin(G.time * 1.3) * 0.05;
+        G.player.grp.rotation.y = Math.sin(G.time * 0.2) * 0.4 - Math.PI / 2 + Math.PI;
+        if (Math.random() < dt * 1.2) G.fx.ring(U.v2.set(pp.x, 0.04, pp.z), 0xd8f6ff, U.rand(1.4, 2.2), 1.4);
         G.fx.update(dt);
-        G.post.render();
+        G.post.render(dtReal);
       } else {
-        G.post.render();
+        G.post.render(dtReal);
       }
       return;
     }
@@ -657,13 +671,13 @@
       G.ambient.update(dtReal);
       G.fx.update(dtReal);
       updatePhoto(dtReal);
-      G.post.render();
+      G.post.render(dtReal);
       if (snapPending) snapPhoto();
       return;
     }
 
     G.time += dt;
-    if (mode === 'play') G.state.playTime = G.time;
+    if (mode === 'play') G.state.playTime += dt;
 
     G.world.update(dt);
     if (mode === 'play') {
@@ -684,6 +698,9 @@
     G.fx.update(dt);
     G.map.update();
     G.ui.cooldowns();
+    // catch materials created at runtime (spawns, fx) for caustics/rim lighting
+    sweepT -= dtReal;
+    if (sweepT <= 0) { sweepT = 1.5; G.gfx.sweep(); }
 
     // frog kill tracking (for whirl shrine)
     const frogsAlive = G.enemies.filter(e => e.alive && e.type === 'frog' && e.pos.z > -60).length;
@@ -692,7 +709,7 @@
     frogsAliveLast = frogsAlive;
 
     G.fx.applyShake(G.camera, dtReal);
-    G.post.render();
+    G.post.render(dtReal);
   }
 
   // ---------------- Boot ----------------
@@ -706,8 +723,20 @@
     G.map.init();
     G.ambient.init();
     G.player = G.makePlayer();
+    // characters get a fresnel rim light so they read clearly against the scenery
+    const spawn = G.spawnEnemy;
+    G.spawnEnemy = function (...args) {
+      const e = spawn.apply(this, args);
+      if (e && e.grp) G.gfx.setRim(e.grp, 0.45);
+      if (e && e.segs) e.segs.forEach(sg => sg.isObject3D && G.gfx.setRim(sg, 0.45));
+      return e;
+    };
     spawnWorldEnemies();
     G.boss = G.makeBoss();
+    G.gfx.setRim(G.player.grp, 0.3);
+    G.gfx.setRim(G.boss.grp, 0.4);
+    for (const it of G.pickups) if (it.kind === 'baby') G.gfx.setRim(it.mesh, 0.5);
+    G.gfx.sweep();
     initInput();
     wrapFrogDeaths();
     if (G.save.exists()) document.getElementById('continue-btn').style.display = 'inline-block';

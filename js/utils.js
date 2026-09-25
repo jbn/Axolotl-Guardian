@@ -59,8 +59,9 @@ U.v3 = new THREE.Vector3();
 // Shared material helper: toon-ish lambert with optional emissive
 U.mat = function (color, opts = {}) {
   const m = new THREE.MeshLambertMaterial(Object.assign({ color }, opts));
-  return m;
+  return G.gfx ? G.gfx.patch(m) : m;
 };
 U.emissiveMat = function (color, emissive, intensity = 0.6, opts = {}) {
-  return new THREE.MeshLambertMaterial(Object.assign({ color, emissive, emissiveIntensity: intensity }, opts));
+  const m = new THREE.MeshLambertMaterial(Object.assign({ color, emissive, emissiveIntensity: intensity }, opts));
+  return G.gfx ? G.gfx.patch(m) : m;
 };
