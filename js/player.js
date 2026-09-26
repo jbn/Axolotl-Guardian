@@ -383,10 +383,9 @@ G.makePlayer = function () {
     G.audio.play('dash');
     const dir = new THREE.Vector3();
     // dash along input direction, or facing if idle
-    const ix = (G.key('KeyD') ? 1 : 0) - (G.key('KeyA') ? 1 : 0);
-    const iz = (G.key('KeyS') ? 1 : 0) - (G.key('KeyW') ? 1 : 0);
-    if (ix || iz) {
-      dir.set(ix, 0, iz).normalize();
+    G.moveInput(dir);
+    if (dir.lengthSq() > 0.01) {
+      dir.normalize();
       dir.applyAxisAngle(U.v1.set(0, 1, 0), P.camYaw);
     } else {
       G.camera.getWorldDirection(dir);
@@ -517,11 +516,10 @@ G.makePlayer = function () {
     P.inWater = P.pos.y < WATER_Y + 0.15 && groundH < -0.45 && !(pad && P.pos.y > pad.y - 0.1);
 
     // input direction (camera relative)
-    const ix = (G.key('KeyD') ? 1 : 0) - (G.key('KeyA') ? 1 : 0);
-    const iz = (G.key('KeyS') ? 1 : 0) - (G.key('KeyW') ? 1 : 0);
-    const moveDir = U.v1.set(ix, 0, iz);
+    const moveDir = G.moveInput(U.v1);
+    const iz = moveDir.z;
     const moving = moveDir.lengthSq() > 0;
-    if (moving) moveDir.normalize().applyAxisAngle(U.v2.set(0, 1, 0), P.camYaw);
+    if (moving) moveDir.applyAxisAngle(U.v2.set(0, 1, 0), P.camYaw);   // keeps analog stick magnitude
 
     const chargeSlow = charging ? 0.45 : 1;
 
@@ -734,7 +732,7 @@ G.makePlayer = function () {
   }
 
   // lock-on input (F / middle mouse) — only while actually playing
-  function inPlay() { return document.pointerLockElement === G.renderer.domElement && !P.dead && !P.riding; }
+  function inPlay() { return (G.touch || document.pointerLockElement === G.renderer.domElement) && !P.dead && !P.riding; }
   document.addEventListener('keydown', e => { if (e.code === 'KeyF' && !e.repeat && inPlay()) P.toggleLock(); });
   G.renderer.domElement.addEventListener('mousedown', e => { if (e.button === 1 && inPlay()) { e.preventDefault(); P.toggleLock(); } });
 

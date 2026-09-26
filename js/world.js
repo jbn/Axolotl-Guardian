@@ -1053,8 +1053,8 @@ G.world = (function () {
     G.grass.init();
 
     // Gates: Lily Gate (marsh→forest), Ruin Gate (forest→ruins/cavern), Temple Gate
-    makeGate(0, 82, 0, 6, 'Lily Gate', 'blast', 'WATER BLAST unlocked!  Hold RMB to charge, release to fire.');
-    makeGate(0, -46, 0, 16, 'Mossgate', 'shield', 'BUBBLE SHIELD unlocked!  Press Q to block attacks.');
+    makeGate(0, 82, 0, 6, 'Lily Gate', 'blast', G.hint('WATER BLAST unlocked!  Hold RMB to charge, release to fire.', 'WATER BLAST unlocked!  Hold 💧 to charge, release to fire.'));
+    makeGate(0, -46, 0, 16, 'Mossgate', 'shield', G.hint('BUBBLE SHIELD unlocked!  Press Q to block attacks.', 'BUBBLE SHIELD unlocked!  Tap 🫧 to block attacks.'));
     makeGate(0, -158, 0, 26, 'Temple Seal', null, null);
 
     makeShrine(-14, 40, 0x4fd8ff);   // decorative shrines

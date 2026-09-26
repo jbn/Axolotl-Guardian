@@ -88,6 +88,15 @@
   }
 
   // ---------------- Input ----------------
+  // touch devices have no pointer lock (iOS lacks the API entirely) — on-screen controls drive the camera instead
+  function lockPointer() {
+    if (G.touch || document.pointerLockElement === canvas) return;
+    try { canvas.requestPointerLock(); } catch (e) {}
+  }
+  function unlockPointer() {
+    if (document.exitPointerLock && document.pointerLockElement) document.exitPointerLock();
+  }
+
   function initInput() {
     document.addEventListener('keydown', e => {
       G.keys[e.code] = true;
@@ -113,7 +122,7 @@
     });
     document.addEventListener('keyup', e => { G.keys[e.code] = false; });
     canvas.addEventListener('mousedown', e => {
-      if (mode !== 'play') return;
+      if (mode !== 'play' || G.touch) return;
       if (document.pointerLockElement !== canvas) { canvas.requestPointerLock(); return; }
       if (e.button === 0) G.player.whip();
       if (e.button === 2) G.player.startCharge();
@@ -133,8 +142,15 @@
       }
     });
     document.addEventListener('pointerlockchange', () => {
+      if (G.touch) return;
       if (document.pointerLockElement !== canvas && mode === 'play') pauseGame();
       if (document.pointerLockElement !== canvas && mode === 'photo') exitPhoto(true);
+    });
+    // mobile: switching apps / locking the phone pauses (the pointer-lock-loss equivalent)
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) return;
+      if (mode === 'photo') exitPhoto(true);
+      pauseGame();
     });
 
     document.getElementById('play-btn').addEventListener('click', () => { G.save.clear(); startGame(); });
@@ -157,7 +173,7 @@
     };
     document.getElementById('hud').style.display = 'none';
     G.map.close();
-    G.ui.subtitle('📷 WASD fly · SPACE/C rise/sink · ENTER snap photo · P back');
+    G.ui.subtitle(G.hint('📷 WASD fly · SPACE/C rise/sink · ENTER snap photo · P back', '📷 Stick to fly · drag to aim · tap 📸 to snap'));
   }
 
   function exitPhoto(skipLock) {
@@ -166,9 +182,7 @@
     photo = null;
     document.getElementById('hud').style.display = 'block';
     G.ui.subtitle(null);
-    if (!skipLock && document.pointerLockElement !== canvas) {
-      try { canvas.requestPointerLock(); } catch (e) {}
-    }
+    if (!skipLock) lockPointer();
   }
 
   function updatePhoto(dt) {
@@ -176,12 +190,10 @@
     const speed = (G.keys['ShiftLeft'] || G.keys['ShiftRight'] ? 30 : 11) * dt;
     const fx = Math.sin(p.yaw) * Math.cos(p.pitch), fy = Math.sin(p.pitch), fz = Math.cos(p.yaw) * Math.cos(p.pitch);
     const rx = Math.cos(p.yaw), rz = -Math.sin(p.yaw);
-    if (G.keys['KeyW']) { p.pos.x += fx * speed; p.pos.y += fy * speed; p.pos.z += fz * speed; }
-    if (G.keys['KeyS']) { p.pos.x -= fx * speed; p.pos.y -= fy * speed; p.pos.z -= fz * speed; }
-    if (G.keys['KeyD']) { p.pos.x += rx * speed; p.pos.z += rz * speed; }
-    if (G.keys['KeyA']) { p.pos.x -= rx * speed; p.pos.z -= rz * speed; }
-    if (G.keys['Space']) p.pos.y += speed;
-    if (G.keys['KeyC']) p.pos.y -= speed;
+    const mv = G.moveInput(U.v2), fwd = -mv.z * speed, side = mv.x * speed;
+    p.pos.x += fx * fwd + rx * side; p.pos.y += fy * fwd; p.pos.z += fz * fwd + rz * side;
+    if (G.key('Space')) p.pos.y += speed;
+    if (G.key('KeyC')) p.pos.y -= speed;
     G.camera.position.copy(p.pos);
     U.v1.set(p.pos.x + fx, p.pos.y + fy, p.pos.z + fz);
     G.camera.lookAt(U.v1);
@@ -215,10 +227,10 @@
     G.boss.startRide();
     G.state.postgame = true;
     G.save.write();
-    try { canvas.requestPointerLock(); } catch (e) {}
+    lockPointer();
     G.ui.hud();
     G.ui.objective('Victory lap on the King\'s back! 🌊');
-    G.ui.toast('🐟 Enjoy the ride — SPACE to hop off, P for photos', 6000);
+    G.ui.toast(G.hint('🐟 Enjoy the ride — SPACE to hop off, P for photos', '🐟 Enjoy the ride — ⬆ to hop off, 📷 for photos'), 6000);
     G.audio.setMood('calm');
   }
 
@@ -302,7 +314,7 @@
   function resumeGame() {
     G.ui.hide('pause-screen');
     mode = 'play';
-    canvas.requestPointerLock();
+    lockPointer();
   }
 
   // ---------------- Start / death / respawn ----------------
@@ -312,16 +324,17 @@
     G.ui.hide('title-screen');
     document.getElementById('hud').style.display = 'block';
     mode = 'play';
-    canvas.requestPointerLock();
+    lockPointer();
+    if (G.touchUI) G.touchUI.onStart();
     G.ui.hud();
     G.ui.objective('Follow the pearl trail north through the Sunlit Marsh');
-    G.ui.toast('🌊 WASD to swim, SPACE to rise or leap, C to dive!', 5200);
+    G.ui.toast(G.hint('🌊 WASD to swim, SPACE to rise or leap, C to dive!', '🌊 Left thumb to swim, drag right side to look · ⬆ rise/leap, ⬇ dive'), 5200);
   }
 
   G.onPlayerDeath = function () {
     mode = 'dead';
     G.map.close();
-    document.exitPointerLock();
+    unlockPointer();
     G.ui.fade(true, () => {
       G.ui.show('death-screen');
       G.ui.fade(false);
@@ -351,13 +364,13 @@
     }
     G.ui.hud();
     mode = 'play';
-    canvas.requestPointerLock();
+    lockPointer();
   }
 
   // ---------------- Cinematics ----------------
   function startCine(steps, onDone) {
     mode = 'cine';
-    document.exitPointerLock();
+    unlockPointer();
     G.ui.cineBars(true);
     G.audio.duck(true);
     document.getElementById('hud').style.display = 'none';
@@ -439,7 +452,7 @@
       },
     ], () => {
       mode = 'play';
-      canvas.requestPointerLock();
+      lockPointer();
       G.boss.startFight();
       G.ui.objective('Free the Crystal Catfish King from the corruption!');
       G.ui.toast('⚔️ Watch his telegraphs — dodge, then strike!', 4200);
@@ -534,7 +547,7 @@
     tutorialT += dt;
     if (tutorialStep === 0 && tutorialT > 6) {
       tutorialStep = 1;
-      G.ui.toast('🌀 LMB: tail whip!  SHIFT: dash (dodges attacks)', 5000);
+      G.ui.toast(G.hint('🌀 LMB: tail whip!  SHIFT: dash (dodges attacks)', '🌀 Tap 🌊 to tail whip!  💨 dash dodges attacks'), 5000);
     } else if (tutorialStep === 1 && tutorialT > 13) {
       tutorialStep = 2;
       G.ui.toast('💠 Defeat corrupted creatures to collect spirit pearls', 4500);
@@ -575,7 +588,7 @@
       }
       if (whirlShrineReady && U.dist2d(p.pos.x, p.pos.z, 14, -6) < 4) {
         s.abilities.whirl = true;
-        G.ui.unlock('WHIRLPOOL SPIN', 'Press E to unleash a spinning whirlpool — great against groups!');
+        G.ui.unlock('WHIRLPOOL SPIN', G.hint('Press E', 'Tap 🌀') + ' to unleash a spinning whirlpool — great against groups!');
         G.ui.flashAbility('ab-whirl');
         G.audio.play('unlock');
         G.fx.burst(new THREE.Vector3(14, 1, -6), 0xffd85f, 40, 8);
@@ -640,6 +653,7 @@
     lastT = nowT;
     let dt = dtReal * G.fx.timeScale(dtReal);   // hit-stop slow-motion
     pollPad();
+    if (G.touchUI) G.touchUI.sync(mode);
 
     if (mode === 'title' || mode === 'paused' || mode === 'dead' || mode === 'win') {
       // gentle idle: world still breathes on title screen
@@ -711,6 +725,20 @@
     G.fx.applyShake(G.camera, dtReal);
     G.post.render(dtReal);
   }
+
+  // hooks for the on-screen touch controls (touch.js)
+  G.game = {
+    mode: () => mode,
+    riding: () => riding,
+    pause: pauseGame, dismount,
+    photo: () => (mode === 'photo' ? exitPhoto() : mode === 'play' && enterPhoto()),
+    snap: () => { snapPending = true; },
+    photoLook(dYaw, dPitch) {
+      if (!photo) return;
+      photo.yaw -= dYaw;
+      photo.pitch = U.clamp(photo.pitch - dPitch, -1.4, 1.4);
+    },
+  };
 
   // ---------------- Boot ----------------
   function boot() {
