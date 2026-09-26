@@ -121,7 +121,7 @@ G.pickupSys = (function () {
           G.audio.play('chest');
           G.fx.burst(m.position, 0xffd85f, 24, 5);
           G.ui.unlock('RELIC FOUND', `${it.name}  (${G.state.relics}/3 ancient relics)`);
-          G.ui.toast('✨ New skin color unlocked — press J!', 4200);
+          G.ui.toast(G.hint('✨ New skin color unlocked — press J!', '✨ New skin color unlocked — tap 🎨!'), 4200);
           G.ui.hud();
           G.save.markCollected('relic:' + it.name);
           G.save.write();

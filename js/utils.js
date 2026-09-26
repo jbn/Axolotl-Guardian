@@ -2,11 +2,22 @@
 window.G = {
   scene: null, camera: null, renderer: null,
   player: null, world: null, enemies: [], pickups: [], boss: null,
-  state: null, keys: {}, pad: {}, mouse: { down: false, rdown: false },
+  state: null, keys: {}, pad: {}, tkeys: {}, mouse: { down: false, rdown: false },
+  stick: { x: 0, z: 0 },          // analog move from the on-screen joystick (touch.js)
   time: 0, paused: false,
 };
-// merged keyboard + gamepad lookup
-G.key = c => G.keys[c] || G.pad[c];
+// merged keyboard + gamepad + touch-button lookup
+G.key = c => G.keys[c] || G.pad[c] || G.tkeys[c];
+// camera-relative move input: x = strafe, z = back(+)/forward(-). Joystick is analog (length <= 1).
+G.moveInput = function (out) {
+  const ix = (G.key('KeyD') ? 1 : 0) - (G.key('KeyA') ? 1 : 0);
+  const iz = (G.key('KeyS') ? 1 : 0) - (G.key('KeyW') ? 1 : 0);
+  if (ix || iz) return out.set(ix, 0, iz).normalize();
+  return out.set(G.stick.x, 0, G.stick.z);
+};
+// touch-first devices get on-screen controls instead of mouse + pointer lock
+G.touch = !!(window.matchMedia && matchMedia('(hover: none) and (pointer: coarse)').matches);
+G.hint = (desktop, touch) => (G.touch ? touch : desktop);
 
 const U = window.U = {
   TAU: Math.PI * 2,
